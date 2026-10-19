@@ -1,4 +1,4 @@
-import { initialData, validateBackup, mergeBackup } from './model.js';
+import { initialData, validateBackup, mergeBackup, categoryChoices } from './model.js';
 import { storage } from './storage.js';
 import { createDesign, prepareDesign } from './design-model.js';
 import { designerControls, drawDesign, bindDesigner, addDesignImages } from './designer.js';
@@ -230,6 +230,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     toastTimer = setTimeout(() => el.classList.remove('show'), 3400);
   }
   function persist() {
+    data.categories = categoryChoices(data);
     const snapshot = clone(data);
     pendingSaves++;
     updateSaveStatus();
@@ -300,6 +301,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
           const snapshot = await storage.readRemote();
           if (canRefresh() && snapshot.revision > storage.version()) {
             data = storage.acceptRemote(snapshot);
+            data.categories = categoryChoices(data);
             watermark.mark = data.watermarkMark || null;
             syncMessage = '';
             render();
@@ -317,6 +319,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
   }
   async function boot() {
     data = await storage.load();
+    data.categories = categoryChoices(data);
     if (migrateAppearance() && !(await persist()))
       throw new Error('数据外观迁移未保存，请先导出备份。');
     render();
@@ -812,7 +815,18 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
       templates = data.templates.filter((t) => t.platform === o.platform);
     showModal(
       `${modal.isNew ? '新建' : '编辑'}${isTemplate ? '稿件模板' : '稿件'}`,
-      `<form id="order-form"><div class="modal-section"><div class="section-label"><span class="number">01</span> 基本信息</div><div class="form-grid"><label class="field"><span>所属平台 *</span><div class="field-inline"><select name="platform" required><option value="">选择平台</option>${platformOptions(o.platform)}</select>${iconBtn('plus', 'inline-platform', '新建平台')}</div></label>${!isTemplate ? `<label class="field"><span>快速使用模板（可选）</span><select id="order-template"><option value="">从空白稿件开始</option>${templates.map((t) => `<option value="${t.id}">${e(t.title)}</option>`).join('')}</select></label>` : ''}</div><div id="inline-platform-form" class="hidden" style="padding:15px;background:#f8f8f8;border-radius:9px;margin-top:15px"><div class="form-grid"><label class="field"><span>新平台名称</span><input id="new-platform-name" maxlength="24" placeholder="平台名称"></label><label class="field"><span>标识灰度</span><input type="color" id="new-platform-color" value="#cecece"></label><label class="field"><span>默认平台费 / %</span><input type="number" id="new-platform-fee" min="0" max="100" value="0"></label><div class="row" style="align-items:end">${btn('添加并选择', 'save-inline-platform', 'small green')}</div></div></div><div class="form-grid" style="margin-top:15px"><label class="field ${isTemplate ? 'full' : ''}"><span>${isTemplate ? '模板' : '稿件'}名称 *</span><input name="title" required maxlength="100" value="${e(o.title)}" placeholder="请输入名称"></label>${!isTemplate ? `<label class="field"><span>单主 *</span><div class="field-inline"><select name="client" required><option value="">选择此平台的单主</option>${filteredClients.map((c) => `<option value="${c.id}" ${c.id === o.client ? 'selected' : ''}>${e(c.name)}</option>`).join('')}</select>${iconBtn('plus', 'quick-client', '新建单主')}</div></label>` : ''}<label class="field"><span>稿件类别 *</span><input name="category" required maxlength="40" value="${e(o.category)}" placeholder="自行填写稿件类别"></label><div class="field"><span>平台标识</span><div class="row" style="height:38px"><span style="background:${p.color};width:25px;height:25px;border-radius:6px"></span><span class="small muted">保存后会同步到日历与列表</span></div></div></div></div><div class="modal-section"><div class="section-label"><span class="number">02</span> 费用设置</div><div class="form-grid"><label class="field"><span>定金 / 元 *</span><input type="number" name="deposit" min="0" max="10000000" step="0.01" required value="${o.deposit}"></label><label class="field"><span>尾款 / 元 *</span><input type="number" name="balance" min="0" max="10000000" step="0.01" required value="${o.balance}"></label><label class="field"><span>平台费率 / %</span><input type="number" name="fee" min="0" max="100" step="0.01" value="${o.fee}"></label>${!isTemplate ? `<div class="field"><span>收款状态</span><label class="check-row" style="height:38px"><input type="checkbox" name="paid" ${o.paid ? 'checked' : ''}> 已收到全部款项</label></div>` : ''}</div><div style="margin-top:14px"><div class="row between" style="margin-bottom:9px"><span class="settings-note">额外服务（计入总金额）</span>${btn(icon('plus') + '添加服务', 'add-service', 'small')}</div><div id="service-rows">${o.extras.map((x, i) => serviceHTML(x, i)).join('')}</div></div><div class="money-preview"><span>稿件总额 <span id="gross-preview">${money(gross(o))}</span> · 扣除平台费后</span><strong id="net-preview">${money(net(o))}</strong></div></div><div class="modal-section"><div class="section-label"><span class="number">03</span> 制作流程与排期</div><span class="hint">保留默认流程，可勾选中间步骤并添加自定义流程。</span><div class="check-options">${[...new Set([...o.stages.slice(1, -2), '草稿', '线稿', '上色'])].map((s) => `<label class="check-row"><input name="optional-stage" type="checkbox" value="${e(s)}" ${o.stages.includes(s) ? 'checked' : ''}>${e(s)}</label>`).join('')}</div><div class="row" style="margin:12px 0"><input id="custom-stage-name" maxlength="40" placeholder="自定义流程名称" aria-label="自定义流程名称">${btn('添加流程', 'add-custom-stage', 'small')}</div>${
+      `<form id="order-form"><div class="modal-section"><div class="section-label"><span class="number">01</span> 基本信息</div><div class="form-grid"><label class="field"><span>所属平台 *</span><div class="field-inline"><select name="platform" required><option value="">选择平台</option>${platformOptions(o.platform)}</select>${iconBtn('plus', 'inline-platform', '新建平台')}</div></label>${!isTemplate ? `<label class="field"><span>快速使用模板（可选）</span><select id="order-template"><option value="">从空白稿件开始</option>${templates.map((t) => `<option value="${t.id}">${e(t.title)}</option>`).join('')}</select></label>` : ''}</div><div id="inline-platform-form" class="hidden" style="padding:15px;background:#f8f8f8;border-radius:9px;margin-top:15px"><div class="form-grid"><label class="field"><span>新平台名称</span><input id="new-platform-name" maxlength="24" placeholder="平台名称"></label><label class="field"><span>标识灰度</span><input type="color" id="new-platform-color" value="#cecece"></label><label class="field"><span>默认平台费 / %</span><input type="number" id="new-platform-fee" min="0" max="100" value="0"></label><div class="row" style="align-items:end">${btn('添加并选择', 'save-inline-platform', 'small green')}</div></div></div><div class="form-grid" style="margin-top:15px"><label class="field ${isTemplate ? 'full' : ''}"><span>${isTemplate ? '模板' : '稿件'}名称 *</span><input name="title" required maxlength="100" value="${e(o.title)}" placeholder="请输入名称"></label>${!isTemplate ? `<label class="field"><span>单主 *</span><div class="field-inline"><select name="client" required><option value="">选择此平台的单主</option>${filteredClients.map((c) => `<option value="${c.id}" ${c.id === o.client ? 'selected' : ''}>${e(c.name)}</option>`).join('')}</select>${iconBtn('plus', 'quick-client', '新建单主')}</div></label>` : ''}<label class="field"><span>稿件类别 *</span><div class="field-inline"><input name="category" required maxlength="40" value="${e(o.category)}" placeholder="输入新类别">${
+        categoryChoices(data).length
+          ? `<select id="category-choice" aria-label="选择已保存的稿件类别"><option value="">选择已有类别</option>${categoryChoices(
+              data,
+            )
+              .map(
+                (value) =>
+                  `<option value="${e(value)}" ${value === o.category ? 'selected' : ''}>${e(value)}</option>`,
+              )
+              .join('')}</select>`
+          : ''
+      }</div><small class="hint">保存后记住类别，下次可直接选择。</small></label><div class="field"><span>平台标识</span><div class="row" style="height:38px"><span style="background:${p.color};width:25px;height:25px;border-radius:6px"></span><span class="small muted">保存后会同步到日历与列表</span></div></div></div></div><div class="modal-section"><div class="section-label"><span class="number">02</span> 费用设置</div><div class="form-grid"><label class="field"><span>定金 / 元 *</span><input type="number" name="deposit" min="0" max="10000000" step="0.01" required value="${o.deposit}"></label><label class="field"><span>尾款 / 元 *</span><input type="number" name="balance" min="0" max="10000000" step="0.01" required value="${o.balance}"></label><label class="field"><span>平台费率 / %</span><input type="number" name="fee" min="0" max="100" step="0.01" value="${o.fee}"></label>${!isTemplate ? `<div class="field"><span>收款状态</span><label class="check-row" style="height:38px"><input type="checkbox" name="paid" ${o.paid ? 'checked' : ''}> 已收到全部款项</label></div>` : ''}</div><div style="margin-top:14px"><div class="row between" style="margin-bottom:9px"><span class="settings-note">额外服务（计入总金额）</span>${btn(icon('plus') + '添加服务', 'add-service', 'small')}</div><div id="service-rows">${o.extras.map((x, i) => serviceHTML(x, i)).join('')}</div></div><div class="money-preview"><span>稿件总额 <span id="gross-preview">${money(gross(o))}</span> · 扣除平台费后</span><strong id="net-preview">${money(net(o))}</strong></div></div><div class="modal-section"><div class="section-label"><span class="number">03</span> 制作流程与排期</div><span class="hint">保留默认流程，可勾选中间步骤并添加自定义流程。</span><div class="check-options">${[...new Set([...o.stages.slice(1, -2), '草稿', '线稿', '上色'])].map((s) => `<label class="check-row"><input name="optional-stage" type="checkbox" value="${e(s)}" ${o.stages.includes(s) ? 'checked' : ''}>${e(s)}</label>`).join('')}</div><div class="row" style="margin:12px 0"><input id="custom-stage-name" maxlength="40" placeholder="自定义流程名称" aria-label="自定义流程名称">${btn('添加流程', 'add-custom-stage', 'small')}</div>${
         !isTemplate
           ? `<div class="form-grid"><label class="field"><span>开始日期（不填则为今天）</span><input type="date" name="start" value="${o.start}"></label><label class="field"><span>截止日期 *</span><input type="date" name="due" required value="${o.due}"></label><label class="field"><span>当前状态</span><select name="status">${allStages(
               o,
@@ -1857,6 +1871,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
       draft.fee = platform(draft.platform).fee;
       renderOrderEditor();
     }
+    if (el.id === 'category-choice' && el.value) $('[name=category]').value = el.value;
     if (el.id === 'order-template' && el.value) {
       captureDraft();
       applyTemplate(data.templates.find((t) => t.id === el.value));
@@ -1895,6 +1910,8 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
   let searchTimer;
   document.addEventListener('input', (event) => {
     const el = event.target;
+    if (el.name === 'category' && $('#category-choice'))
+      $('#category-choice').value = el.value.trim();
     if (el.id === 'client-history-search' && modal?.type === 'client-detail')
       $('#client-history-list').innerHTML = clientHistoryHTML(modal.id, el.value);
     if (el.id === 'layout-template-name') layoutTemplateName = el.value;

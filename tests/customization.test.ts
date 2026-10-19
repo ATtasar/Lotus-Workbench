@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import { initialData, validateBackup } from '../desktop/model.js';
+import { initialData, validateBackup, categoryChoices, mergeBackup } from '../desktop/model.js';
 import { createDesign } from '../desktop/design-model.js';
 import { LocalStore, restoreBackup } from '../local/store';
 const png =
@@ -46,11 +46,19 @@ it('accepts duration-free commission templates, custom stages and optional clien
   const data = fixture();
   expect(validateBackup(data)).toEqual(data);
   const legacy = structuredClone(data);
+  delete legacy.categories;
   delete legacy.clients[0].cn;
   delete legacy.clients[0].salutation;
   delete legacy.clients[0].platformLink;
   legacy.templates[0].duration = 7;
   expect(() => validateBackup(legacy)).not.toThrow();
+  expect(categoryChoices(legacy)).toContain('自由类别');
+  const phone = structuredClone(data);
+  phone.categories = ['已无稿件的历史类别'];
+  expect(mergeBackup(data, phone).categories).toContain('已无稿件的历史类别');
+  const invalidCategories = structuredClone(data);
+  invalidCategories.categories = ['重复类别', '重复类别'];
+  expect(() => validateBackup(invalidCategories)).toThrow();
   const unsafe = structuredClone(data);
   unsafe.clients[0].platformLink = 'javascript:alert(1)';
   expect(() => validateBackup(unsafe)).toThrow();
@@ -63,6 +71,7 @@ it('persists template fonts, free text, optional card fields, background and ima
   let store: LocalStore | undefined;
   try {
     const data = fixture();
+    data.categories = ['已删除稿件的类别', '自由类别'];
     const card = createDesign('card');
     card.font = 'kai';
     card.color = '#123456';
@@ -108,6 +117,9 @@ it('persists template fonts, free text, optional card fields, background and ima
     store = new LocalStore(root);
     store.saveDesktop(data, 0);
     expect(store.loadDesktop().data).toEqual(data);
+    data.templates = [];
+    store.saveDesktop(data, store.loadDesktop().revision);
+    expect(store.loadDesktop().data.categories).toEqual(['已删除稿件的类别', '自由类别']);
     const saved = store.loadDesktop().data.toolTemplates[0].design;
     expect(
       saved.items.find(

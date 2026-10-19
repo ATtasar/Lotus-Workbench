@@ -5,6 +5,7 @@ export interface DesktopRecord {
 export interface DesktopData {
   version: number;
   appearanceVersion: number;
+  categories?: string[];
   platforms: DesktopRecord[];
   clients: DesktopRecord[];
   archivedClients: DesktopRecord[];
@@ -19,3 +20,4 @@ export interface DesktopData {
 export function initialData(): DesktopData;
 export function validateBackup(raw: unknown): DesktopData;
 export function mergeBackup(current: unknown, incoming: unknown): DesktopData;
+export function categoryChoices(data: DesktopData): string[];

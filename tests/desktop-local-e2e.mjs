@@ -117,7 +117,7 @@ try {
   await action('new-template');
   assert.equal(await page.locator('[name=duration]').count(), 0);
   assert.equal(await page.locator('[name=category]').inputValue(), '');
-  assert.equal(await page.locator('#categories option').count(), 0);
+  assert.equal(await page.locator('#category-choice option:not([value=""])').count(), 0);
   await page.locator('[name=title]').fill('电脑端头像模板');
   await page.locator('[name=category]').fill('头像');
   await page.locator('[name=deposit]').fill('100');
@@ -127,8 +127,22 @@ try {
   assert.equal(await page.locator('[name=optional-stage][value="配色确认"]').isChecked(), true);
   await page.locator('#save-order-btn').click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await saved();
+  await action('new-template');
+  assert.equal(await page.locator('[name=category]').inputValue(), '');
+  assert.deepEqual(
+    await page
+      .locator('#category-choice option:not([value=""])')
+      .evaluateAll((nodes) => nodes.map((n) => n.value)),
+    ['头像'],
+  );
+  await page.locator('#category-choice').selectOption('头像');
+  assert.equal(await page.locator('[name=category]').inputValue(), '头像');
+  await page.locator('[name=category]').fill('尚未保存的类别');
+  await action('close-modal');
   await nav('orders');
   await action('new-order');
+  assert.equal(await page.locator('#category-choice option[value="尚未保存的类别"]').count(), 0);
   await page.locator('#order-template').selectOption({ label: '电脑端头像模板' });
   assert.equal(await page.locator('[name=due]').inputValue(), '');
   assert.equal(await page.locator('[name=optional-stage][value="配色确认"]').isChecked(), true);
@@ -389,6 +403,30 @@ try {
       }),
   );
   assert.deepEqual(source, legacy);
+  // Remember a category independently of the final order/template using it.
+  await nav('templates');
+  await action('new-template');
+  await page.locator('[name=title]').fill('类别记忆测试');
+  await page.locator('[name=category]').fill('保留的自定义类别');
+  await page.locator('#save-order-btn').click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await saved();
+  const categoryTemplate = (await state()).templates.find((t) => t.title === '类别记忆测试');
+  await page.locator(`[data-action=edit-template][data-id="${categoryTemplate.id}"]`).click();
+  await action('delete-draft');
+  await action('confirm-action');
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await saved();
+  await page.reload();
+  await page.locator('.sidebar').waitFor();
+  await nav('templates');
+  await action('new-template');
+  assert.equal(await page.locator('[name=category]').inputValue(), '');
+  assert.equal(await page.locator('#category-choice option[value="保留的自定义类别"]').count(), 1);
+  const remembered = await state();
+  assert.ok(remembered.categories.includes('保留的自定义类别'));
+  assert.equal(remembered.templates.filter((t) => t.category === '保留的自定义类别').length, 0);
+  await action('close-modal');
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   await fs.writeFile(
@@ -407,6 +445,7 @@ try {
           'client/platform/template/order create and edit',
           'optional client CN / salutation / platform URL and searchable history',
           'duration-free templates and persisted custom commission stages',
+          'saved category selection and category history survives last-template deletion / reload',
           'editable fonts / colors / background / styles in three components',
           'real text dragging, optional card number and manual template text',
           'save as new / update / switch component templates',

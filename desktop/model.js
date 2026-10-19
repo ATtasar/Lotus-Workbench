@@ -8,6 +8,7 @@ export function initialData() {
   return {
     version: 1,
     appearanceVersion: 2,
+    categories: [],
     platforms: [],
     clients: [],
     archivedClients: [],
@@ -36,6 +37,17 @@ export function validateBackup(raw) {
     if (!Array.isArray(raw[key])) fail('缺少 ' + key);
   raw.archivedClients ||= [];
   if (!Array.isArray(raw.archivedClients)) fail('单主历史不正确');
+  if (
+    raw.categories !== undefined &&
+    (!Array.isArray(raw.categories) ||
+      raw.categories.length > 10000 ||
+      raw.categories.some(
+        (value) =>
+          typeof value !== 'string' || !value.trim() || value !== value.trim() || value.length > 40,
+      ) ||
+      new Set(raw.categories).size !== raw.categories.length)
+  )
+    fail('稿件类别记录不正确');
   const safeId = (id) => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(id),
     str = (v) => typeof v === 'string' && v.length <= 30000,
     num = (v, max = 10000000) => Number.isFinite(v) && v >= 0 && v <= max;
@@ -165,8 +177,21 @@ export function validateBackup(raw) {
     : raw.orders[0]?.id || '';
   return raw;
 }
-// Safe migration from a previously independent phone: append copies with new
-// identities, retain PC settings and rewrite every commission association.
+// Preserve saved names and expose categories used by older records.
+export function categoryChoices(data) {
+  return [
+    ...new Set(
+      [
+        ...(data.categories || []),
+        ...data.orders.map((item) => item.category),
+        ...data.templates.map((item) => item.category),
+      ]
+        .filter((value) => typeof value === 'string' && value.trim() && value.trim().length <= 40)
+        .map((value) => value.trim()),
+    ),
+  ];
+}
+// Append imported copies with new identities while retaining PC settings.
 export function mergeBackup(current, incoming) {
   const merged = validateBackup(structuredClone(current));
   const source = validateBackup(structuredClone(incoming));
@@ -232,5 +257,6 @@ export function mergeBackup(current, incoming) {
     });
   if (!merged.current) merged.current = orders.get(source.current) || '';
   if (!merged.watermarkMark && source.watermarkMark) merged.watermarkMark = source.watermarkMark;
+  merged.categories = [...new Set([...categoryChoices(merged), ...categoryChoices(source)])];
   return validateBackup(merged);
 }
