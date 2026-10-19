@@ -1,0 +1,30 @@
+{
+  admin localhost:2019
+}
+:8080 {
+  respond /healthz "ok" 200
+}
+{$SITE_ADDRESS} {
+  encode zstd gzip
+  request_body {
+    max_size 140MB
+  }
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options DENY
+    Referrer-Policy no-referrer
+    Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+  }
+  handle /api/* {
+    reverse_proxy api:3000
+  }
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    header /index.html Cache-Control "no-store"
+    file_server
+  }
+  log {
+    output stdout
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "creator-studio-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-schema.cjs",
+    "dev": "node --env-file=.env --watch dist/backend/src/main.js",
+    "start": "node --env-file=.env dist/backend/src/main.js",
+    "start:production": "node dist/backend/src/main.js",
+    "admin:reset-password": "node --env-file=.env dist/backend/src/admin.js",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "express": "^5.1.0",
+    "pg": "^8.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.0",
+    "yaml": "^2.9.1"
+  },
+  "overrides": {
+    "rollup": "4.64.9"
+  }
+}
