@@ -28,7 +28,7 @@
 
 ## 自动检查
 
-- `npm test`：48 项通过，覆盖原业务、日历、云端边界、本机安全边界以及电脑端数据持久化、迁移、恢复、删除与冲突保护。
+- `npm test`：52 项通过，覆盖原业务、日历、云端边界、本机安全边界以及电脑端数据持久化、迁移、恢复、删除与冲突保护。
 - `npm run test:desktop:ui`：通过，Edge 实际操作电脑端页面和图片组件；结果及截图在被忽略的 `artifacts/desktop-validation/`。
 - `npm run test:local:launcher`：隔离目录检查首次安装、重新安装保留数据、更新前备份、单实例、真实 Windows `.lnk` 启动与服务重启。
 
@@ -46,6 +46,11 @@
 
 本次在没有 node_modules、构建产物、数据库或安装配置的全新发布副本中，实际执行 Install-Local.cmd：自动安装 110 个锁定依赖，完成构建、SQLite 初始化和隔离桌面快捷方式创建。没有从原程序复制 node_modules 或用户数据。
 
-另外实际执行默认 npm run build、npm start，通过 48 项单元测试及电脑端 Edge 交互测试。在新安装中保存测试稿件、单主和图片后，停止服务，再调用新建的真实 Windows .lnk，重启后的完整工作区摘要和 revision 保持一致。默认地址以外的测试使用隔离端口与数据目录，未覆盖正在使用的工作台数据或真实桌面快捷方式。
+另外实际执行默认 npm run build、npm start，通过 52 项单元测试及电脑端 Edge 交互测试。在新安装中保存测试稿件、单主和图片后，停止服务，再调用新建的真实 Windows .lnk，重启后的完整工作区摘要和 revision 保持一致。默认地址以外的测试使用隔离端口与数据目录，未覆盖正在使用的工作台数据或真实桌面快捷方式。
 
 这些结果来自当前 Windows 电脑上的干净目录，尚未在另一台物理电脑上逐项实测。其他电脑仍需要 Windows 10/11、Node.js 24.x，以及首次安装依赖时的网络；安装完成后核心功能不需要外网。
+
+
+### GitHub ZIP 的 Windows 脚本兼容性修复
+
+实际下载 GitHub ZIP 时发现：Git 默认把 CMD 脚本存成 LF，干净 Git 检出或本机归档可能通过 autocrlf 转回 CRLF，但 GitHub ZIP 会保留 LF，导致 Windows 批处理解析失败。现将 CMD/BAT 标记为 -text 并提交真实 CRLF 字节，增加 EditorConfig 和四个启动脚本的回归检查。发布时重新下载 GitHub ZIP 检查并运行安装入口，不仅测试本机工作副本。

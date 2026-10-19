@@ -2,3 +2,7 @@
 *.sql text eol=lf
 Dockerfile text eol=lf
 *.yaml text eol=lf
+
+# Preserve literal CRLF in Windows entry points, including GitHub ZIP downloads.
+*.cmd -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.bat -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
