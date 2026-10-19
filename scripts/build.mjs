@@ -11,7 +11,7 @@ if (!html.includes('href="styles.css"') || !html.includes('src="app.js"')) {
 }
 const output = html
   .replace(/<link rel="stylesheet" href="styles.css"\s*\/?>/, () => `<style>\n${css}\n</style>`)
-  .replace(/<script src="app.js" defer><\/script>/, '')
+  .replace(/^[ \t]*<script src="app.js" defer><\/script>[ \t]*\r?\n/m, '')
   .replace('</body>', () => `<script>\n${js.replace(/<\/script/gi, '<\\/script')}\n</script>\n</body>`);
 await fs.writeFile(path.join(root, 'index.html'), output, 'utf8');
 await fs.writeFile(path.join(root, '.nojekyll'), '', 'utf8');
