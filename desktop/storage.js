@@ -1,4 +1,4 @@
-// Both UIs use the same PC service. Browser storage is read solely for a
+// Desktop uses the PC service. Browser storage is read solely for a
 // confirmed migration; it is never the primary data store.
 import { validateBackup } from './model.js';
 import { request, connect, localAccess } from './api.js';
@@ -11,17 +11,17 @@ export const storage = {
   readRemote: () => request('desktop-workspace'),
   acceptRemote(snapshot) {
     const data = validateBackup(snapshot.data);
-    if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < revision) throw new Error('读取到旧版本，已取消覆盖。');
+    if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < revision)
+      throw new Error('读取到旧版本，已取消覆盖。');
     revision = snapshot.revision;
     return data;
   },
-  lanStatus: () => request('lan/status'),
-  configureLan: (data) => request('lan/config', data),
-  pairingCode: () => request('lan/code', {}),
-  revokeDevice: (id) => request('lan/revoke', { id }),
+  info: () => request('info'),
   async load() {
     await connect(true);
     const result = await request('desktop-workspace');
+    if (!Number.isSafeInteger(result.revision) || result.revision < 0)
+      throw new Error('数据库版本响应无效，已停止载入。');
     revision = result.revision;
     return validateBackup(result.data);
   },
@@ -29,6 +29,8 @@ export const storage = {
     if (blocked) throw new Error('前次保存失败。请先导出备份，再刷新页面；不会覆盖磁盘记录。');
     try {
       const result = await request('desktop-workspace', { data, baseRevision: revision });
+      if (!Number.isSafeInteger(result.revision) || result.revision !== revision + 1)
+        throw new Error('保存响应未确认写入数据库。请保留页面并导出备份，不会显示保存成功。');
       revision = result.revision;
     } catch (error) {
       blocked = true;

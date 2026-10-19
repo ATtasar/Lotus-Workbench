@@ -173,7 +173,7 @@ export function bindDesigner(
   state,
   resolve,
   bounds,
-  { kind, redraw, render, upload, notify },
+  { kind, redraw, render, upload, notify, changed = () => {} },
 ) {
   const controls = document.querySelector('#design-controls');
   if (!controls) return;
@@ -213,6 +213,7 @@ export function bindDesigner(
     } else if (el.dataset.designVisible !== undefined) {
       state.items[Number(el.dataset.designVisible)].visible = el.checked;
     } else return;
+    changed();
     redraw();
   };
   controls.oninput = update;
@@ -232,18 +233,22 @@ export function bindDesigner(
       if (action === 'background')
         upload(async (assets) => {
           state.backgroundImage = assets[0]?.src || '';
+          changed();
           render();
         }, false);
       if (action === 'clear-background') {
         state.backgroundImage = '';
+        changed();
         render();
       }
       if (action === 'add-image')
         upload(async (assets) => {
           await addDesignImages(state, assets);
+          changed();
           render();
         }, true);
       if (action === 'add-text') {
+        changed();
         if (state.items.length >= 100) throw new Error('每份模板最多 100 个图层。');
         state.items.push({
           kind: 'text',
@@ -263,12 +268,14 @@ export function bindDesigner(
         redraw();
       }
       if (action === 'remove' && state.selected >= 0) {
+        changed();
         state.items.splice(state.selected, 1);
         state.selected = -1;
         refresh();
         redraw();
       }
       if (['front', 'back'].includes(action) && state.selected >= 0) {
+        changed();
         const item = state.items.splice(state.selected, 1)[0];
         if (action === 'front') {
           state.items.push(item);
@@ -334,6 +341,7 @@ export function bindDesigner(
       item = state.items[state.selected];
     item.x = Math.max(-8000, Math.min(8000, dragging.startX + p.x - dragging.x));
     item.y = Math.max(-8000, Math.min(8000, dragging.startY + p.y - dragging.y));
+    changed();
     redraw();
   };
   canvas.onpointerup = canvas.onpointercancel = () => {
@@ -351,6 +359,7 @@ export function bindDesigner(
       return;
     event.preventDefault();
     event.stopPropagation();
+    changed();
     if (event.key === 'Delete' || event.key === 'Backspace') {
       state.items.splice(state.selected, 1);
       state.selected = -1;

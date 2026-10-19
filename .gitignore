@@ -45,3 +45,4 @@ backups/
 /data/
 /logs/
 /config.json
+/config.last-good.json

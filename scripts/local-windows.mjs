@@ -14,17 +14,19 @@ const args = process.argv.slice(2),
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-const root = path.resolve(
+const rootInput =
   value('--data-root') ||
-    process.env.LOTUS_LOCAL_ROOT ||
-    (process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, 'Lotus-Workbench')
-      : path.join(
-          process.env.USERPROFILE || process.env.HOME || source,
-          '.local/share/Lotus-Workbench',
-        )),
-);
+  process.env.LOTUS_LOCAL_ROOT ||
+  (process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Lotus-Workbench')
+    : path.join(
+        process.env.USERPROFILE || process.env.HOME || source,
+        '.local/share/Lotus-Workbench',
+      ));
+const root = path.resolve(rootInput);
 const configFile = path.join(root, 'config.json'),
+  recoveryConfigFile = path.join(root, 'config.last-good.json'),
+  databaseFile = path.join(root, 'data/workbench.sqlite'),
   stateFile = path.join(root, 'runtime/service.json');
 const appId = 'lotus-workbench-windows-v1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,13 +53,82 @@ function checkNode() {
       '请安装 Node.js 24 LTS（https://nodejs.org/），重新打开终端后再安装。无需管理员命令配置数据库。',
     );
 }
-function config() {
-  if (!fs.existsSync(configFile))
-    throw new Error('本机尚未安装，请先运行 Install-Local.cmd 或 npm run local:install。');
-  const c = readJSON(configFile);
+function validateConfig(c) {
   if (c.appId !== appId || !Number.isInteger(c.port) || c.port < 1024 || c.port > 65535)
     throw new Error('本地配置损坏，原数据保留，请检查 config.json。');
+  if (c.dataRoot && (!path.isAbsolute(c.dataRoot) || path.resolve(c.dataRoot) !== root))
+    throw new Error('安装配置的数据目录与启动目录不一致，已停止，避免打开另一份数据库。');
   return c;
+}
+function writeJSON(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const pending = file + '.' + randomUUID() + '.pending';
+  const fd = fs.openSync(pending, 'wx');
+  try {
+    fs.writeFileSync(fd, JSON.stringify(data, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.renameSync(pending, file);
+  } catch (error) {
+    // Some Windows redirected/virtualized user folders report EXDEV even for
+    // sibling files. Preserve the fully flushed pending copy until verified.
+    if (error.code !== 'EXDEV') throw error;
+    fs.copyFileSync(pending, file);
+    const installed = fs.openSync(file, 'r+');
+    try {
+      fs.fsyncSync(installed);
+    } finally {
+      fs.closeSync(installed);
+    }
+    if (!fs.readFileSync(file).equals(fs.readFileSync(pending)))
+      throw new Error('安装配置落盘校验失败，已保留完整暂存文件和原数据。');
+    fs.unlinkSync(pending);
+  }
+}
+function config() {
+  if (!fs.existsSync(configFile)) {
+    if (
+      fs.existsSync(recoveryConfigFile) &&
+      (fs.existsSync(databaseFile) || fs.existsSync(path.join(root, 'restore-journal.json')))
+    ) {
+      const recovered = validateConfig(readJSON(recoveryConfigFile));
+      writeJSON(configFile, recovered);
+      console.log('已从安装配置副本恢复启动设置，沿用原数据库。');
+    } else {
+      throw new Error(
+        (fs.existsSync(databaseFile) ? '已有数据库，但安装配置缺失。' : '本机安装配置不存在。') +
+          '请运行 Install-Local.cmd 修复安装，原数据会先备份；日常启动不会初始化空数据库。',
+      );
+    }
+  }
+  const c = validateConfig(readJSON(configFile));
+  if (!fs.existsSync(recoveryConfigFile)) writeJSON(recoveryConfigFile, { ...c, dataRoot: root });
+  return c;
+}
+function requireInstalledFiles() {
+  if (!fs.existsSync(databaseFile) && !fs.existsSync(path.join(root, 'restore-journal.json')))
+    throw new Error(
+      '原数据库不存在：' + databaseFile + '。已停止，未新建空库。请检查数据目录或恢复备份。',
+    );
+  for (const name of ['server.mjs', 'web/index.html'])
+    if (!fs.existsSync(path.join(source, 'local-dist', name)))
+      throw new Error('缺少本地构建资源，请运行 Install-Local.cmd 修复安装。');
+}
+function matchesService(h, c) {
+  return (
+    h?.appId === appId &&
+    h.ui === 'desktop-blank' &&
+    h.protocol === 3 &&
+    h.profile === 'desktop-only' &&
+    h.dataRoot &&
+    path.resolve(h.dataRoot) === root &&
+    h.web &&
+    path.resolve(h.web) === path.join(source, 'local-dist/web') &&
+    h.port === c.port
+  );
 }
 async function health(port) {
   try {
@@ -113,7 +184,6 @@ function npm(argv) {
 }
 async function openBrowser(url) {
   if (args.includes('--no-browser')) return;
-  if (args.includes('--connect-phone')) url += '/?connect=phone';
   const script = "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:LOTUS_LOCAL_URL";
   if (process.platform === 'win32') {
     const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
@@ -121,12 +191,19 @@ async function openBrowser(url) {
       encoding: 'utf8',
       env: { ...process.env, LOTUS_LOCAL_URL: url },
     });
-    if (r.status !== 0) throw new Error('服务已就绪，但默认浏览器未能自动打开。请访问：' + url);
+    if (r.error || r.status !== 0)
+      throw new Error('服务已就绪，但默认浏览器未能自动打开。请访问：' + url);
+    writeJSON(path.join(root, 'runtime/last-open.json'), {
+      url,
+      at: new Date().toISOString(),
+      launcherPid: process.pid,
+    });
   } else console.log('浏览器地址：' + url);
 }
 async function start() {
   checkNode();
   const c = config();
+  requireInstalledFiles();
   const url = `http://127.0.0.1:${c.port}`;
   fs.mkdirSync(path.join(root, 'runtime'), { recursive: true });
   const lock = path.join(root, 'runtime/start.lock');
@@ -134,7 +211,7 @@ async function start() {
     // A concurrent shortcut launch waits for the first launcher, then reuses it.
     for (let n = 0; n < 40 && fs.existsSync(lock); n++) {
       const h = await health(c.port);
-      if (h?.appId === appId && h.ui === 'desktop-blank' && h.protocol === 2) {
+      if (matchesService(h, c)) {
         console.log('复用已运行服务：' + url);
         await openBrowser(url);
         return;
@@ -149,7 +226,7 @@ async function start() {
     const h = await health(c.port),
       state = readState();
     if (h?.appId === appId && state?.instance === h.instance) {
-      if (h.protocol !== 2)
+      if (h.protocol !== 3)
         throw new Error('本地服务需要更新，请先运行 Install-Local.cmd，现有数据会保留。');
       if (h.ui !== 'desktop-blank')
         throw new Error(
@@ -157,6 +234,8 @@ async function start() {
         );
       if (path.resolve(state.web) !== path.join(source, 'local-dist/web'))
         throw new Error('另一个程序目录的工作台正在运行，请先 Stop-Local 再运行安装脚本更新。');
+      if (!matchesService(h, c))
+        throw new Error('运行中的服务配置或数据目录不匹配，请停止后运行 Install-Local.cmd 修复。');
       console.log('服务已运行：' + url);
       await openBrowser(url);
       return;
@@ -199,7 +278,7 @@ async function start() {
     fs.closeSync(output);
     for (let n = 0; n < 80; n++) {
       const ready = await health(c.port);
-      if (ready?.appId === appId && ready.instance === instance) {
+      if (matchesService(ready, c) && ready.instance === instance) {
         console.log('工作台已就绪：' + url);
         console.log('数据目录：' + path.join(root, 'data'));
         await openBrowser(url);
@@ -245,6 +324,8 @@ async function stop() {
 }
 async function shortcut() {
   if (process.platform !== 'win32') throw new Error('桌面快捷方式只支持 Windows 10/11。');
+  config();
+  requireInstalledFiles();
   const script = `
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
@@ -301,6 +382,8 @@ async function storeModule() {
   return import(pathToFileURL(path.join(source, 'local-dist/store.mjs')).href);
 }
 async function backup() {
+  if (!fs.existsSync(databaseFile))
+    throw new Error('数据库不存在，不能创建空数据库冒充备份：' + databaseFile);
   const state = readState();
   if (state && (await health(state.port))) {
     const r = await api('backup');
@@ -309,7 +392,7 @@ async function backup() {
   }
   await cleanupStaleLock(path.join(root, 'runtime/service.lock'));
   const { LocalStore } = await storeModule(),
-    store = new LocalStore(root);
+    store = new LocalStore(root, { initialize: false });
   try {
     const file = store.backup();
     console.log('完整备份：' + file);
@@ -325,9 +408,10 @@ async function install() {
   if (process.platform === 'win32' && Number(os.release().split('.')[0]) < 10)
     throw new Error('需要 Windows 10/11。');
   console.log('正在检查本地环境。无需 PostgreSQL、云账号、管理员权限或防火墙规则。');
-  const settings = fs.existsSync(configFile)
-    ? config()
-    : { appId, port: Number(value('--port') || 17841) };
+  const settings =
+    fs.existsSync(configFile) || (fs.existsSync(recoveryConfigFile) && fs.existsSync(databaseFile))
+      ? config()
+      : { appId, port: Number(value('--port') || 17841) };
   if (!Number.isInteger(settings.port) || settings.port < 1024 || settings.port > 65535)
     throw new Error('端口无效。');
   const running = readState();
@@ -369,37 +453,23 @@ async function install() {
   if (!built) run(process.execPath, [path.join(source, 'scripts/build-local.mjs')]);
   fs.mkdirSync(root, { recursive: true });
   const { LocalStore } = await storeModule(),
-    store = new LocalStore(root);
+    store = new LocalStore(root, { initialize: !fs.existsSync(databaseFile) });
   try {
-    store.load();
     store.loadDesktop();
   } finally {
     store.close();
   }
-  const pending = configFile + '.' + randomUUID() + '.pending';
-  fs.writeFileSync(
-    pending,
-    JSON.stringify(
-      { ...settings, appId, sourceRoot: source, node: process.execPath, lockHash },
-      null,
-      2,
-    ),
-  );
-  try {
-    fs.renameSync(pending, configFile);
-  } catch (e) {
-    if (e.code !== 'EXDEV') throw e;
-    fs.copyFileSync(pending, configFile);
-    const fd = fs.openSync(configFile, 'r+');
-    try {
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    if (!fs.readFileSync(pending).equals(fs.readFileSync(configFile)))
-      throw new Error('本机配置落盘校验失败，数据目录保留。');
-    fs.unlinkSync(pending);
-  }
+  const installed = {
+    ...settings,
+    appId,
+    dataRoot: root,
+    profile: 'desktop-only',
+    sourceRoot: source,
+    node: process.execPath,
+    lockHash,
+  };
+  writeJSON(recoveryConfigFile, installed);
+  writeJSON(configFile, installed);
   if (!args.includes('--no-shortcut')) await shortcut();
   console.log('安装与数据库检查通过。');
   await start();
@@ -433,53 +503,17 @@ async function restore() {
   console.log('重新双击桌面快捷方式即可打开。');
 }
 try {
+  if (!path.isAbsolute(rootInput))
+    throw new Error('数据目录必须使用绝对路径，避免随工作目录变化创建另一份数据库。');
+  if (args.includes('--connect-phone') || command?.startsWith('lan-'))
+    throw new Error('当前版本仅支持电脑端稿件工作台，不启用手机、局域网或防火墙配置。');
   if (command === 'install') await install();
   else if (command === 'start') await start();
   else if (command === 'stop') await stop();
   else if (command === 'shortcut') await shortcut();
   else if (command === 'backup') await backup();
   else if (command === 'restore') await restore();
-  else if (command === 'lan-enable') {
-    const address = value('--address'),
-      phone = value('--phone-address');
-    if (!address || !phone)
-      throw new Error(
-        '请提供 --address 电脑IPv4 和 --phone-address 手机IPv4。也可双击 Connect-Phone.cmd 在设置中填写。',
-      );
-    await start();
-    const result = await api('lan/config', {
-      enabled: true,
-      address,
-      trustedAddresses: phone.split(',').map((ip) => ip.trim()),
-    });
-    console.log('手机浏览器地址：' + result.mobileUrl);
-    console.log(
-      '还需配置仅允许指定手机 IP 和专用网络的 Windows 防火墙规则；不会自动更改网络类别。',
-    );
-  } else if (command === 'lan-disable') {
-    await start();
-    await api('lan/config', { enabled: false });
-    console.log('局域网入口已关闭，本地数据库保留。');
-  } else if (command === 'lan-status') {
-    const result = await api('lan/status', {}, 'GET');
-    console.log(JSON.stringify(result, null, 2));
-  } else if (command === 'lan-firewall') {
-    const { configureFirewall } = await import('./lan-firewall.mjs');
-    const { LanAccess } = await import(pathToFileURL(path.join(source, 'local-dist/lan.mjs')).href);
-    const access = new LanAccess(root);
-    if (!access.config.enabled && !args.includes('--remove'))
-      throw new Error('请先通过 Connect-Phone.cmd 设置电脑和手机 IP。');
-    if (!args.includes('--remove'))
-      access.validate(access.config.address, access.config.trustedAddresses);
-    await configureFirewall({
-      address: access.config.address,
-      phones: access.config.trustedAddresses,
-      port: config().port,
-      node: process.execPath,
-      remove: args.includes('--remove'),
-      checkOnly: args.includes('--check-only'),
-    });
-  } else throw new Error('可用命令：install / start / stop / shortcut / backup / restore');
+  else throw new Error('可用命令：install / start / stop / shortcut / backup / restore');
 } catch (e) {
   console.error('操作失败：' + e.message);
   console.error('原数据不会被自动清空。配置与日志目录：' + root);

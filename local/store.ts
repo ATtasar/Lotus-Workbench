@@ -144,10 +144,15 @@ export class LocalStore {
   readonly dataDir: string;
   readonly filesDir: string;
   readonly db: DatabaseSync;
-  constructor(readonly root: string) {
+  constructor(
+    readonly root: string,
+    options: { initialize?: boolean } = {},
+  ) {
     finishPendingRestore(root);
     this.dataDir = path.join(root, 'data');
     this.filesDir = path.join(this.dataDir, 'files');
+    if (options.initialize === false && !fs.existsSync(path.join(this.dataDir, 'workbench.sqlite')))
+      throw new Error('数据库不存在，未创建空数据库。');
     fs.mkdirSync(this.filesDir, { recursive: true });
     this.db = new DatabaseSync(path.join(this.dataDir, 'workbench.sqlite'));
     try {
@@ -156,6 +161,8 @@ export class LocalStore {
       if (v > SCHEMA_VERSION)
         throw new Error('数据库来自较新程序，禁止降级或清空。请使用兼容版本。');
       if (v === 0) {
+        if (options.initialize === false)
+          throw new Error('已有数据库没有有效结构版本，已停止，未初始化或覆盖。请检查完整备份。');
         const existing = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
         if (existing.length)
           throw new Error('发现未标记版本的已有数据库，已停止初始化以保护数据。');

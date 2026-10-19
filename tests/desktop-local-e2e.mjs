@@ -16,6 +16,7 @@ let service = await serveLocal({
   web: path.resolve('local-dist/web'),
   port,
   instance: 'desktop-ui-test',
+  initialize: true,
 });
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -122,6 +123,7 @@ try {
   await page.locator('[name=category]').fill('头像');
   await page.locator('[name=deposit]').fill('100');
   await page.locator('[name=balance]').fill('200');
+  await page.locator('[name=optional-stage][value="草稿"]').check();
   await page.locator('#custom-stage-name').fill('配色确认');
   await action('add-custom-stage');
   assert.equal(await page.locator('[name=optional-stage][value="配色确认"]').isChecked(), true);
@@ -159,9 +161,22 @@ try {
   await page.locator('tbody [data-action=order-detail]').first().click();
   await action('edit-order');
   await page.locator('[name=notes]').fill('编辑后保存');
+  await page.locator('[name=status]').selectOption('草稿');
   await page.locator('#save-order-btn').click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await saved();
+  await page.reload();
+  await page.locator('.sidebar').waitFor();
+  assert.equal((await state()).orders[0].status, '草稿');
+  assert.equal((await state()).orders[0].notes, '编辑后保存');
+  assert.match(
+    JSON.parse(
+      service.store.db
+        .prepare("SELECT payload FROM desktop_records WHERE collection='orders'")
+        .get().payload,
+    ).images[0],
+    /^@disk:[a-f0-9]{64}$/,
+  );
   await nav('calendar');
   assert.equal(
     await page.locator('.event strong').filter({ hasText: '本地电脑端稿件' }).count(),
@@ -318,6 +333,9 @@ try {
     await action('tools-back');
   }
   await action('settings');
+  assert.equal(await page.locator('[data-action=lan-settings]').count(), 0);
+  assert.doesNotMatch(await page.locator('.nav').innerText(), /收纳|手机/);
+  assert.match(await page.getByRole('dialog').innerText(), /workbench\.sqlite/);
   await action('backup-local');
   await page.waitForFunction(() =>
     document.querySelector('#toast').textContent.includes('数据库与图片已备份'),
@@ -427,6 +445,74 @@ try {
   assert.ok(remembered.categories.includes('保留的自定义类别'));
   assert.equal(remembered.templates.filter((t) => t.category === '保留的自定义类别').length, 0);
   await action('close-modal');
+  await nav('orders');
+  await action('new-order');
+  await page.locator('[name=title]').fill('临时删除测试稿件');
+  await page.locator('[name=category]').fill('头像');
+  await page.locator('[name=client]').selectOption({ label: '电脑端测试单主' });
+  await page.locator('[name=due]').fill(date);
+  await page.locator('#save-order-btn').click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await saved();
+  const disposable = (await state()).orders.find((o) => o.title === '临时删除测试稿件');
+  await page.locator(`[data-action=order-detail][data-id="${disposable.id}"]`).first().click();
+  await action('edit-order');
+  await action('delete-draft');
+  await action('confirm-action');
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await saved();
+  assert.equal(
+    (await state()).orders.some((o) => o.id === disposable.id),
+    false,
+  );
+  assert.equal(
+    service.store.db
+      .prepare("SELECT id FROM desktop_records WHERE collection='orders' AND id=?")
+      .get(disposable.id),
+    undefined,
+  );
+  assert.equal((await state()).orders.length, remembered.orders.length);
+  assert.equal((await state()).orders[0].images[0], remembered.orders[0].images[0]);
+  // A successful HTTP response without a commit acknowledgement is not a save.
+  // Both cases leave the real database and the editing form intact.
+  for (const status of [500, 200]) {
+    await nav('orders');
+    const committed = await state();
+    await page.locator('tbody [data-action=order-detail]').first().click();
+    await action('edit-order');
+    await page.locator('[name=notes]').fill('未提交的修改-' + status);
+    assert.equal(await page.locator('#save-status').innerText(), '表单有未保存修改');
+    let warned = false;
+    page.once('dialog', async (dialog) => {
+      warned = dialog.type() === 'beforeunload';
+      await dialog.dismiss();
+    });
+    await page.reload({ timeout: 3000 }).catch(() => {});
+    assert.equal(warned, true, 'unsaved form must warn before leaving');
+    assert.equal(await page.locator('[name=notes]').inputValue(), '未提交的修改-' + status);
+    const routePattern = '**/local-api/desktop-workspace';
+    await page.route(routePattern, (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({
+            status,
+            contentType: 'application/json',
+            body: status === 500 ? JSON.stringify({ message: '模拟写盘失败' }) : '{}',
+          })
+        : route.continue(),
+    );
+    await page.locator('#save-order-btn').click();
+    await page.waitForFunction(() =>
+      document.querySelector('#save-status').textContent.includes('保存失败'),
+    );
+    assert.equal(await page.getByRole('dialog').isVisible(), true);
+    assert.deepEqual(await state(), committed);
+    assert.equal(service.store.loadDesktop().data.orders[0].notes, committed.orders[0].notes);
+    await page.unroute(routePattern);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.reload();
+    await page.locator('.sidebar').waitFor();
+    await saved();
+  }
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   await fs.writeFile(
@@ -450,6 +536,11 @@ try {
           'real text dragging, optional card number and manual template text',
           'save as new / update / switch component templates',
           'private image persistence',
+          'status edit / refresh checked against SQLite',
+          'order deletion confirmed against SQLite while other images remain',
+          'unsaved form leave warning',
+          'HTTP error and invalid success acknowledgement never claim saved',
+          'no storage or phone entry points in desktop UI',
           'calendar and client associations',
           'receipt PDF and card PNG',
           'watermark and layout templates',

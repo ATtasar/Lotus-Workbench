@@ -199,6 +199,35 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
   let layoutTemplateId = '',
     layoutTemplateName = '';
   let toastTimer;
+  let localInfo,
+    toolDirty = false;
+  function hasUnsavedChanges() {
+    return pendingSaves > 0 || failedSave || !!modal?.dirty || toolDirty;
+  }
+  function markToolDirty() {
+    toolDirty = true;
+    updateSaveStatus();
+  }
+  window.addEventListener('beforeunload', (event) => {
+    if (!hasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  for (const name of ['input', 'change'])
+    document.addEventListener(
+      name,
+      (event) => {
+        if (
+          modal &&
+          event.target.closest('#order-form,#client-form,#settings-form,#platform-form')
+        ) {
+          modal.dirty = true;
+          updateSaveStatus();
+        }
+        if (tool && tool !== 'watermark' && event.target.closest('.tool-settings')) markToolDirty();
+      },
+      true,
+    );
   const platform = (id) =>
     data.platforms.find((p) => p.id === id) || { name: '未分类', color: '#dadada', fee: 0 };
   const client = (id) =>
@@ -272,7 +301,11 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         ? '保存失败 · 请导出备份'
         : pendingSaves
           ? '正在保存…'
-          : syncMessage || '<span class="live-dot"></span>已保存到电脑';
+          : modal?.dirty
+            ? '表单有未保存修改'
+            : toolDirty
+              ? '组件模板有未保存修改'
+              : syncMessage || '<span class="live-dot"></span>已保存到电脑';
   }
   function canRefresh() {
     return (
@@ -292,10 +325,10 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
       const version = await storage.remoteRevision();
       if (version > storage.version()) {
         if (!canRefresh()) {
-          syncMessage = '另一端有更新 · 结束编辑后同步';
+          syncMessage = '其他页面有更新 · 结束编辑后同步';
           if (remoteNotice !== version) {
             remoteNotice = version;
-            toast('另一端已更新。当前输入会保留；保存时会检查冲突。');
+            toast('其他页面已更新。当前输入会保留；保存时会检查冲突。');
           }
         } else {
           const snapshot = await storage.readRemote();
@@ -319,6 +352,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
   }
   async function boot() {
     data = await storage.load();
+    localInfo = await storage.info();
     data.categories = categoryChoices(data);
     if (migrateAppearance() && !(await persist()))
       throw new Error('数据外观迁移未保存，请先导出备份。');
@@ -329,8 +363,6 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     );
     window.addEventListener('focus', refreshRemote);
     document.addEventListener('visibilitychange', refreshRemote);
-    if (storage.localAccess && new URLSearchParams(location.search).get('connect') === 'phone')
-      await showLanSettings();
   }
   const navItems = [
     ['home', '主页', 'home'],
@@ -755,7 +787,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     $('#app').inert = true;
     requestAnimationFrame(() => {
       // Do not steal focus if the user already entered another field before
-      // the next animation frame (also applies to the retained mobile forms).
+      // the next animation frame (keep focus within the current form).
       if ($('#modal-root').contains(document.activeElement)) return;
       const f = $('input:not([type=checkbox]):not([type=file]),select,textarea', $('#modal-root'));
       (f || $('.modal-head button'))?.focus();
@@ -768,6 +800,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     $('#app').inert = false;
     document.body.style.overflow = '';
     lastFocus?.isConnected && lastFocus.focus();
+    updateSaveStatus();
     setTimeout(refreshRemote, 0);
   }
   function confirmAction(title, text, callback) {
@@ -995,44 +1028,10 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     modal = { type: 'settings' };
     showModal(
       '工作台设置',
-      `<form id="settings-form"><label class="field"><span>工作室名称</span><input name="name" required maxlength="12" value="${e(data.profile.name)}"></label><label class="field"><span>画师昵称</span><input name="artist" required maxlength="20" value="${e(data.profile.artist)}"></label><label class="field"><span>工作室备注</span><input name="tagline" maxlength="60" value="${e(data.profile.tagline)}"></label></form><div class="divider"></div><h3 style="font-size:12px">数据管理</h3><p class="settings-note" style="margin-top:9px">记录保存在本地电脑的 SQLite 数据库，图片单独保存。关闭浏览器或更新程序不会清空数据。数据目录：%LOCALAPPDATA%/Lotus-Workbench/data。</p><div class="settings-actions">${btn(icon('download') + '导出全部备份', 'backup-export')}${btn(icon('upload') + '导入备份', 'backup-import')}${btn('合并旧手机备份', 'merge-phone-backup')}${btn('备份数据库与图片', 'backup-local')}${btn('导入此浏览器旧记录', 'import-browser')}${storage.localAccess ? btn('手机联动', 'lan-settings') : ''}${btn('清空全部记录', 'clear-data', 'danger')}</div><p class="settings-note">备份包含稿件、单主、平台、模板和素材。导入将替换当前工作台，请先保存好原来的备份。</p>`,
+      `<form id="settings-form"><label class="field"><span>工作室名称</span><input name="name" required maxlength="12" value="${e(data.profile.name)}"></label><label class="field"><span>画师昵称</span><input name="artist" required maxlength="20" value="${e(data.profile.artist)}"></label><label class="field"><span>工作室备注</span><input name="tagline" maxlength="60" value="${e(data.profile.tagline)}"></label></form><div class="divider"></div><h3 style="font-size:12px">数据管理</h3><p class="settings-note" style="margin-top:9px">记录保存在本地电脑的 SQLite 数据库，图片单独保存。关闭浏览器或更新程序不会清空数据。数据库：${e(localInfo.databasePath)}<br>图片与附件：${e(localInfo.filesPath)}。</p><div class="settings-actions">${btn(icon('download') + '导出全部备份', 'backup-export')}${btn(icon('upload') + '导入备份', 'backup-import')}${btn('合并稿件备份', 'merge-backup')}${btn('备份数据库与图片', 'backup-local')}${btn('导入此浏览器旧记录', 'import-browser')}${btn('清空全部记录', 'clear-data', 'danger')}</div><p class="settings-note">备份包含稿件、单主、平台、模板和素材。导入将替换当前工作台，请先保存好原来的备份。</p>`,
       `<button type="submit" form="settings-form" class="btn primary">保存设置</button>`,
       'narrow',
     );
-  }
-  async function showLanSettings() {
-    if (!storage.localAccess) {
-      toast('请在电脑本机管理手机连接。');
-      return;
-    }
-    const status = await storage.lanStatus();
-    modal = { type: 'lan-settings' };
-    showModal(
-      '手机联动',
-      `<p class="settings-note">手机与电脑连接同一局域网，所有稿件和图片保存到电脑。仅在可信网络中使用；连接使用 HTTP。</p><form id="lan-form"><label class="check-row"><input name="lan-enabled" type="checkbox" ${status.enabled ? 'checked' : ''}>启用局域网手机访问</label><label class="field"><span>电脑网卡地址</span><select name="lan-address">${status.interfaces.map((item) => `<option value="${e(item.address)}" ${item.address === status.address ? 'selected' : ''}>${e(item.name)} · ${e(item.address)}</option>`).join('')}</select></label><label class="field"><span>允许的手机 IPv4 地址（多个用逗号分隔）</span><input name="lan-phones" value="${e(status.trustedAddresses.join(', '))}" placeholder="例如 192.168.1.168"></label><button type="submit" class="btn primary">保存连接设置</button></form><div class="divider"></div><p class="settings-note">${status.active ? `手机浏览器打开：<strong>${e(status.mobileUrl)}</strong>` : '局域网入口未开启。'}${status.error ? `<br>${e(status.error)}` : ''}<br>Windows 防火墙须只允许上述手机 IP、当前端口和“专用网络”。公用网络下规则不会生效。</p><button class="btn" data-action="lan-code" ${status.active ? '' : 'disabled'}>生成两分钟配对码</button><p id="lan-pairing-code" role="status"></p><div class="divider"></div><h3>已配对设备</h3>${status.devices.map((device) => `<div class="row between"><span>${e(device.name)} · ${e(device.address)}</span>${btn('撤销授权', 'lan-revoke', 'small', `data-id="${e(device.id)}"`)}</div>`).join('') || '<p class="settings-note">暂无配对设备。</p>'}`,
-      btn('关闭', 'close-modal'),
-      'narrow',
-    );
-  }
-  async function saveLanForm(form) {
-    const submit = form.querySelector('button[type=submit]');
-    submit.disabled = true;
-    try {
-      const fd = new FormData(form);
-      await storage.configureLan({
-        enabled: fd.has('lan-enabled'),
-        address: fd.get('lan-address'),
-        trustedAddresses: String(fd.get('lan-phones') || '')
-          .split(/[，,\s]+/)
-          .filter(Boolean),
-      });
-      await showLanSettings();
-      toast('手机连接设置已保存。');
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      if (submit.isConnected) submit.disabled = false;
-    }
   }
   async function importBrowserRecords() {
     const candidate = await storage.legacy();
@@ -1043,6 +1042,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     confirmImport(candidate);
   }
   function navigate(next) {
+    toolDirty = false;
     page = next;
     tool = '';
     selected.clear();
@@ -1141,19 +1141,6 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         if (el.isConnected) el.disabled = false;
         break;
       }
-      case 'lan-settings':
-        await showLanSettings();
-        break;
-      case 'lan-code': {
-        const result = await storage.pairingCode();
-        $('#lan-pairing-code').textContent = result.code + '（两分钟内有效，使用一次失效）';
-        break;
-      }
-      case 'lan-revoke':
-        await storage.revokeDevice(id);
-        await showLanSettings();
-        toast('设备授权已撤销。');
-        break;
       case 'add-custom-stage': {
         captureDraft();
         const name = $('#custom-stage-name').value.trim();
@@ -1170,6 +1157,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         break;
       }
       case 'new-tool-template':
+        toolDirty = false;
         toolConfig = {
           kind: tool,
           name: '',
@@ -1188,6 +1176,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         render();
         break;
       case 'new-layout-template':
+        toolDirty = false;
         layout = createDesign('layout');
         layoutTemplateId = '';
         layoutTemplateName = '';
@@ -1476,11 +1465,13 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         break;
       }
       case 'open-tool':
+        toolDirty = false;
         initTool(el.dataset.tool);
         render();
         window.scrollTo(0, 0);
         break;
       case 'tools-back':
+        toolDirty = false;
         tool = '';
         render();
         break;
@@ -1552,11 +1543,13 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         else data.toolTemplates[idx] = t;
         toolConfig.id = t.id;
         if (!(await persist())) return;
+        toolDirty = false;
         render();
         toast('模板已保存');
         break;
       }
       case 'load-tool-template': {
+        toolDirty = false;
         const t = data.toolTemplates.find((t) => t.id === id);
         const keep = {
           order: toolConfig.order,
@@ -1625,11 +1618,13 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         if (!(await persist())) return;
         layoutTemplateId = templateId;
         layoutTemplateName = name;
+        toolDirty = false;
         render();
         toast('排版模板已保存');
         break;
       }
       case 'load-layout-template': {
+        toolDirty = false;
         const t = data.toolTemplates.find((t) => t.id === id);
         layout = prepareDesign(t.layout);
         layout.selected = -1;
@@ -1656,7 +1651,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
       case 'backup-import':
         pickFiles(importBackup, false, '.json');
         break;
-      case 'merge-phone-backup':
+      case 'merge-backup':
         pickFiles((files) => importBackup(files, true), false, '.json');
         break;
       case 'backup-local': {
@@ -1755,10 +1750,6 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
   document.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.target;
-    if (form.id === 'lan-form') {
-      await saveLanForm(form);
-      return;
-    }
     if (form.id === 'order-form') {
       if (!form.reportValidity()) return;
       captureDraft();
@@ -2253,6 +2244,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
           redraw: () => drawCurrentTool(),
           render,
           notify: toast,
+          changed: markToolDirty,
           upload: (callback, multiple) =>
             pickFiles(async (files) => callback(await readImages(files)), multiple),
         };
@@ -2314,6 +2306,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
     ctx.globalAlpha = 1;
   }
   async function addLayoutItems(assets) {
+    markToolDirty();
     await addDesignImages(layout, assets);
     render();
     toast('素材已放入画布，可拖动调整位置');
@@ -2458,11 +2451,11 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
         if (!(await persist())) return;
         closeModal();
         render();
-        toast(merge ? '手机旧记录已合并，电脑已有记录和设置保留。' : '备份已导入，所有关联已恢复');
+        toast(merge ? '稿件记录已合并，电脑已有记录和设置保留。' : '备份已导入，所有关联已恢复');
       },
     };
     showModal(
-      merge ? '合并旧手机备份？' : '导入并替换工作台？',
+      merge ? '合并稿件备份？' : '导入并替换工作台？',
       `<p class="settings-note">备份包含 ${candidate.orders.length} 份稿件、${candidate.clients.length} 位单主和 ${candidate.assets.length} 张素材。${merge ? '确认后先备份电脑数据，再用新编号添加副本，保留现有记录与设置。同名平台使用电脑设置，稿件本身费率保留。重复导入会添加重复副本。' : '确认后先备份电脑中的现有数据，再替换电脑端记录。'}原浏览器记录保留。</p>`,
       btn('取消', 'close-modal') + btn('确认导入', 'confirm-action', 'primary'),
       'narrow',
@@ -2476,7 +2469,7 @@ import { designerControls, drawDesign, bindDesigner, addDesignImages } from './d
       $('#app').innerHTML =
         '<div class="loading">工作台读取失败：' +
         e(err.message) +
-        '<br>请检查电脑服务和局域网连接后重新打开。原数据未被清空。</div>';
+        '<br>请检查本机服务和日志后重新打开。原数据未被清空。</div>';
       console.error(err);
     });
 })();

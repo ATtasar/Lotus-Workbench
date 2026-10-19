@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 process.chdir(root);
-for (const args of [['-b'], ['-p', 'tsconfig.local.json']]) {
+for (const args of [['-p', 'tsconfig.local.json']]) {
   const result = spawnSync(
     process.execPath,
     [path.join(root, 'node_modules/typescript/bin/tsc'), ...args],
@@ -19,7 +19,7 @@ for (const args of [['-b'], ['-p', 'tsconfig.local.json']]) {
 const web = path.join(root, 'local-dist/web');
 if (path.resolve(web) !== path.resolve(root, 'local-dist', 'web'))
   throw new Error('页面输出目录不正确，停止构建。');
-await fs.rm(web, { recursive: true, force: true });
+// Overwrite only known program resources. Never remove data or whole directories.
 await fs.mkdir(web, { recursive: true });
 for (const name of [
   'index.html',
@@ -32,18 +32,6 @@ for (const name of [
   'designer.js',
 ])
   await fs.copyFile(path.join(root, 'desktop', name), path.join(web, name));
-await fs.mkdir(path.join(web, 'mobile'), { recursive: true });
-for (const name of ['index.html', 'mobile.css'])
-  await fs.copyFile(path.join(root, 'mobile', name), path.join(web, 'mobile', name));
-const core = await fs.readFile(path.join(root, 'desktop/app.js'), 'utf8');
-const mobile = await fs.readFile(path.join(root, 'mobile/mobile.js'), 'utf8');
-const point = core.lastIndexOf('  boot()');
-if (point < 0) throw new Error('未找到共享稿件逻辑的启动位置，停止手机版构建。');
-await fs.writeFile(
-  path.join(web, 'mobile/app.js'),
-  (core.slice(0, point) + '\n' + mobile + '\n' + core.slice(point))
-    .replace(/from ['"]\.\/([^'"]+)['"]/g, "from '../$1'"),
-);
 await build({
   configFile: false,
   ssr: { noExternal: true },
@@ -56,7 +44,6 @@ await build({
       input: {
         server: path.join(root, 'local/server.ts'),
         store: path.join(root, 'local/store.ts'),
-        lan: path.join(root, 'local/lan.ts'),
       },
       output: { entryFileNames: '[name].mjs', chunkFileNames: 'chunks/[name]-[hash].mjs' },
     },
@@ -65,7 +52,13 @@ await build({
 await fs.writeFile(
   path.join(root, 'local-dist/build.json'),
   JSON.stringify(
-    { mode: 'windows-local', ui: 'desktop-blank', createdAt: new Date().toISOString() },
+    {
+      mode: 'windows-local',
+      ui: 'desktop-blank',
+      profile: 'desktop-only',
+      protocol: 3,
+      createdAt: new Date().toISOString(),
+    },
     null,
     2,
   ),

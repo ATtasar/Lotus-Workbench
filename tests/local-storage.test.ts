@@ -5,6 +5,7 @@ import os from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { LocalStore, restoreBackup, emptyDatabase, APP_ID } from '../local/store';
 import { serveLocal } from '../local/server';
+import { initialData } from '../desktop/model.js';
 import { entity, deleteOrder } from '../src/data/domain';
 import { makeFolder, makeItem, makeOrder, makeTask } from '../src/data/seed';
 
@@ -211,7 +212,7 @@ it('serves only loopback resources and rejects foreign origins, arbitrary paths 
   fs.mkdirSync(web);
   fs.writeFileSync(path.join(web, 'index.html'), '<h1>本地页面</h1>');
   const port = 19863,
-    service = await serveLocal({ root, web, port, instance: 'unit-test' }),
+    service = await serveLocal({ root, web, port, instance: 'unit-test', initialize: true }),
     base = `http://127.0.0.1:${port}`;
   try {
     expect(service.server.address()).toMatchObject({ address: '127.0.0.1' });
@@ -229,24 +230,54 @@ it('serves only loopback resources and rejects foreign origins, arbitrary paths 
     const { token } = await (
       await fetch(base + '/local-api/session', { headers: { 'X-Lotus-Local': '1' } })
     ).json();
-    const response = await fetch(base + '/local-api/workspace', {
+    const response = await fetch(base + '/local-api/desktop-workspace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Lotus-Local': '1', 'X-Lotus-Token': token },
-      body: JSON.stringify({ data: fixture(), baseRevision: 0 }),
+      body: JSON.stringify({ data: initialData(), baseRevision: 0 }),
     });
     expect(response.status).toBe(200);
     expect(
       (
         await (
-          await fetch(base + '/local-api/workspace', {
+          await fetch(base + '/local-api/desktop-workspace', {
             headers: { 'X-Lotus-Local': '1', 'X-Lotus-Token': token },
           })
         ).json()
-      ).data.folders,
-    ).toHaveLength(3);
+      ).revision,
+    ).toBe(1);
+    for (const endpoint of ['workspace', 'lan/status', 'lan/config']) {
+      expect(
+        (
+          await fetch(base + '/local-api/' + endpoint, {
+            headers: { 'X-Lotus-Local': '1', 'X-Lotus-Token': token },
+          })
+        ).status,
+      ).toBe(404);
+    }
+    expect((await fetch(base + '/mobile/')).status).toBe(404);
+    expect(service.lanStatus()).toMatchObject({ active: false, enabled: false });
   } finally {
     const stopped = new Promise<void>((resolve) => service.server.once('close', resolve));
     service.close();
     await stopped;
   }
+});
+it('does not create a new empty database during normal service startup', async () => {
+  const root = temporary();
+  await expect(
+    serveLocal({ root, web: root, port: 19863, instance: 'missing-db' }),
+  ).rejects.toThrow(/未初始化空数据库/);
+  expect(fs.existsSync(path.join(root, 'data/workbench.sqlite'))).toBe(false);
+});
+it('refuses an empty existing database during normal startup instead of seeding it', async () => {
+  const root = temporary(),
+    database = path.join(root, 'data/workbench.sqlite');
+  fs.mkdirSync(path.dirname(database));
+  new DatabaseSync(database).close();
+  await expect(serveLocal({ root, web: root, port: 19863, instance: 'empty-db' })).rejects.toThrow(
+    /未初始化或覆盖/,
+  );
+  const db = new DatabaseSync(database, { readOnly: true });
+  expect(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([]);
+  db.close();
 });

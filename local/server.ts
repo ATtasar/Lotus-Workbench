@@ -11,7 +11,21 @@ export async function serveLocal(options: {
   web: string;
   port: number;
   instance: string;
+  /** Historical integration tests only; the Windows launcher always uses desktop. */
+  profile?: 'desktop' | 'legacy-lan';
+  /** Installation creates the database explicitly; normal startup must never do so. */
+  initialize?: boolean;
 }) {
+  const desktopOnly = options.profile !== 'legacy-lan';
+  if (!path.isAbsolute(options.root) || !path.isAbsolute(options.web))
+    throw new Error('数据库和页面目录必须为绝对路径。');
+  const databasePath = path.join(options.root, 'data/workbench.sqlite');
+  if (
+    !options.initialize &&
+    !fs.existsSync(databasePath) &&
+    !fs.existsSync(path.join(options.root, 'restore-journal.json'))
+  )
+    throw new Error('数据库不存在，启动已中止，未初始化空数据库：' + databasePath);
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535)
     throw new Error('本机端口必须在 1024–65535 范围。');
   const rawBase = process.env.LOTUS_API_BASE_URL || '/local-api/';
@@ -27,8 +41,9 @@ export async function serveLocal(options: {
   fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, instance: options.instance }));
   let store!: LocalStore, access!: LanAccess;
   try {
-    store = new LocalStore(options.root);
-    access = new LanAccess(options.root);
+    store = new LocalStore(options.root, { initialize: options.initialize === true });
+    store.loadDesktop();
+    if (!desktopOnly) access = new LanAccess(options.root);
   } catch (error) {
     store?.close();
     fs.closeSync(lock);
@@ -42,15 +57,18 @@ export async function serveLocal(options: {
     lanServer: http.Server | undefined,
     lanError = '',
     lastRemoteBackup = 0;
-  const lanStatus = () => ({
-    ...access.publicStatus(),
-    active: !!lanServer?.listening,
-    error: lanError,
-    port: options.port,
-    mobileUrl: access.config.enabled
-      ? 'http://' + access.config.address + ':' + options.port + '/mobile/'
-      : '',
-  });
+  const lanStatus = () =>
+    desktopOnly
+      ? { enabled: false, active: false, profile: 'desktop-only' }
+      : {
+          ...access.publicStatus(),
+          active: !!lanServer?.listening,
+          error: lanError,
+          port: options.port,
+          mobileUrl: access.config.enabled
+            ? 'http://' + access.config.address + ':' + options.port + '/mobile/'
+            : '',
+        };
   function close() {
     if (closing) return;
     closing = true;
@@ -107,7 +125,12 @@ export async function serveLocal(options: {
                     instance: options.instance,
                     status: 'ok',
                     ui: 'desktop-blank',
-                    protocol: 2,
+                    protocol: 3,
+                    profile: desktopOnly ? 'desktop-only' : 'legacy-lan',
+                    dataRoot: options.root,
+                    databasePath,
+                    web: options.web,
+                    port: options.port,
                     pid: process.pid,
                     apiBase,
                   },
@@ -153,9 +176,21 @@ export async function serveLocal(options: {
             return json(200, { token: expected, localAccess: !isLan });
           if (req.headers['x-lotus-token'] !== expected)
             return json(403, { message: '服务连接已更新，请刷新页面后再保存。' });
+          if (
+            desktopOnly &&
+            !['desktop-workspace', 'revision', 'backup', 'stop', 'info'].includes(endpoint)
+          )
+            return json(404, { message: '当前仅提供电脑端稿件接口。' });
           if (isLan && !['desktop-workspace', 'revision', 'backup'].includes(endpoint))
             return json(403, { message: '此管理操作仅能在电脑本机执行。' });
           if (req.method === 'GET') {
+            if (endpoint === 'info')
+              return json(200, {
+                profile: 'desktop-only',
+                databasePath,
+                filesPath: path.join(options.root, 'data/files'),
+                backupsPath: path.join(options.root, 'backups'),
+              });
             if (endpoint === 'desktop-workspace') return json(200, store.loadDesktop());
             if (endpoint === 'revision') return json(200, { revision: store.desktopRevision() });
             if (!isLan && endpoint === 'workspace') return json(200, store.load());
@@ -204,11 +239,28 @@ export async function serveLocal(options: {
           });
           return res.end(
             'window.LOTUS_CONFIG=' +
-              JSON.stringify({ apiBase, localAccess: !isLan, pollIntervalMs: 3000 }) +
+              JSON.stringify({ apiBase, localAccess: !isLan, desktopOnly, pollIntervalMs: 3000 }) +
               ';',
           );
         }
         let name = decodeURIComponent(url.pathname);
+        if (name.includes('\\') || name.split('/').some((x) => x === '..' || x.startsWith('.')))
+          return json(403, { message: '无效路径。' });
+        if (
+          desktopOnly &&
+          ![
+            '/',
+            '/index.html',
+            '/styles.css',
+            '/app.js',
+            '/model.js',
+            '/storage.js',
+            '/api.js',
+            '/design-model.js',
+            '/designer.js',
+          ].includes(name)
+        )
+          return json(404, { message: '电脑端页面资源不存在。' });
         if (name === '/mobile') {
           res.writeHead(308, { Location: '/mobile/' });
           return res.end();
@@ -269,6 +321,7 @@ export async function serveLocal(options: {
       });
   }
   async function startLan() {
+    if (desktopOnly) return;
     if (!access.config.enabled) return;
     access.validate(access.config.address, access.config.trustedAddresses);
     const current = makeServer('http://' + access.config.address + ':' + options.port, true);
@@ -325,6 +378,8 @@ export async function serveLocal(options: {
         port: options.port,
         token,
         web: options.web,
+        dataRoot: options.root,
+        profile: desktopOnly ? 'desktop-only' : 'legacy-lan',
         apiBase,
       },
       null,
