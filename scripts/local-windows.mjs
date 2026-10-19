@@ -256,6 +256,10 @@ elseif(-not $env:LOTUS_DESKTOP_DIR){$menu=[Environment]::GetFolderPath('Programs
 else{$menu=$null}
 if($menu){New-Item -ItemType Directory -Path $menu -Force | Out-Null; $destinations+=,$menu}
 $shell=New-Object -ComObject WScript.Shell
+# Notify the shell about only the shortcuts and their containing directories.
+# https://learn.microsoft.com/windows/win32/api/shlobj_core/nf-shlobj_core-shchangenotify
+try { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class LotusShortcutNotify { [DllImport("shell32.dll", CharSet=CharSet.Unicode)] public static extern void SHChangeNotify(uint eventId,uint flags,string path,IntPtr unused); }' }
+catch { Write-Warning '桌面刷新通知未完成，可在桌面按 F5 刷新。' }
 foreach($destination in $destinations){
   $shortcutPath=Join-Path $destination $env:LOTUS_SHORTCUT_NAME
   $shortcut=$shell.CreateShortcut($shortcutPath)
@@ -263,8 +267,13 @@ foreach($destination in $destinations){
   $shortcut.Arguments='/d /c ""'+$env:LOTUS_START_SCRIPT+'" --data-root "'+$env:LOTUS_LOCAL_DATA_ROOT+'"'+$env:LOTUS_SHORTCUT_EXTRA+'"'
   $shortcut.WorkingDirectory=$env:LOTUS_SOURCE
   $shortcut.Description=$env:LOTUS_SHORTCUT_DESCRIPTION
+  $shortcut.IconLocation=$env:LOTUS_SHORTCUT_ICON+',0'
   $shortcut.WindowStyle=7
   $shortcut.Save()
+  if('LotusShortcutNotify' -as [type]){
+    [LotusShortcutNotify]::SHChangeNotify(0x2000,0x0005,$shortcutPath,[IntPtr]::Zero)
+    [LotusShortcutNotify]::SHChangeNotify(0x1000,0x0005,$destination,[IntPtr]::Zero)
+  }
   Write-Output $shortcutPath
 }`;
   const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
@@ -278,6 +287,7 @@ foreach($destination in $destinations){
         : '',
       LOTUS_SHORTCUT_NAME: '创作者工作台.lnk',
       LOTUS_SHORTCUT_DESCRIPTION: '启动本机创作者工作台',
+      LOTUS_SHORTCUT_ICON: path.join(source, 'desktop/workbench.ico'),
       LOTUS_START_SCRIPT: path.join(source, 'Start-Local.cmd'),
       LOTUS_SOURCE: source,
       LOTUS_LOCAL_DATA_ROOT: root,
