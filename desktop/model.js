@@ -1,4 +1,5 @@
-// Shared original desktop data model and validation. No UI changes.
+// Shared desktop data model; additive fields retain old backup compatibility.
+import { validateDesign } from './design-model.js';
 const dateStr = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const parseDate = (s) => new Date(s + 'T12:00:00');
@@ -79,15 +80,18 @@ export function validateBackup(raw) {
   for (const p of raw.platforms)
     if (!str(p.name) || !p.name.trim() || !color(p.color) || !num(p.fee, 100))
       fail('平台信息不正确');
-  for (const c of [...raw.clients, ...raw.archivedClients])
+  for (const c of [...raw.clients, ...raw.archivedClients]) {
     if (
       !str(c.name) ||
       !Array.isArray(c.platforms) ||
       !c.platforms.length ||
       c.platforms.some((id) => !platforms.has(id)) ||
-      ['preferences', 'dislikes', 'requirements', 'notes'].some((k) => !str(c[k]))
+      ['preferences', 'dislikes', 'requirements', 'notes'].some((k) => !str(c[k])) ||
+      ['cn', 'salutation', 'platformLink'].some((k) => c[k] !== undefined && !str(c[k])) ||
+      (c.platformLink && !/^https?:\/\/[^\s]+$/i.test(c.platformLink))
     )
       fail('单主信息不正确');
+  }
   const validDate = (s) =>
     typeof s === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(s) &&
@@ -115,7 +119,8 @@ export function validateBackup(raw) {
         o.stages.at(-2) !== '成图' ||
         o.stages.at(-1) !== '完成' ||
         new Set(o.stages).size !== o.stages.length ||
-        o.stages.some((s) => !['未开始', '草稿', '线稿', '上色', '成图', '完成'].includes(s))
+        o.stages.length > 30 ||
+        o.stages.some((s) => typeof s !== 'string' || !s.trim() || s.length > 40 || s === '退单')
       )
         fail('流程信息不正确');
       if (
@@ -137,42 +142,22 @@ export function validateBackup(raw) {
           !str(o.notes))
       )
         fail('稿件日期、单主或状态不正确');
-      if (type === 'templates' && (!num(o.duration, 3650) || o.duration < 1))
-        fail('模板工期不正确');
     }
   for (const a of raw.assets) if (!str(a.name) || !safeImage(a.src)) fail('素材不正确');
   for (const t of raw.toolTemplates) {
     if (!str(t.name) || !['receipt', 'card', 'layout'].includes(t.kind)) fail('组件模板不正确');
     if (t.kind === 'layout') {
-      const l = t.layout;
-      if (
-        !l ||
-        !num(l.width, 4000) ||
-        l.width < 200 ||
-        !num(l.height, 4000) ||
-        l.height < 200 ||
-        !color(l.bg) ||
-        !Array.isArray(l.items) ||
-        l.items.some(
-          (x) =>
-            !safeImage(x.src) ||
-            !str(x.name) ||
-            !Number.isFinite(x.x) ||
-            !Number.isFinite(x.y) ||
-            !num(x.scale, 200) ||
-            x.scale < 1 ||
-            !Number.isFinite(x.rotation) ||
-            Math.abs(x.rotation) > 180,
-        )
-      )
-        fail('排版模板不正确');
+      validateDesign(t.layout, safeImage, fail);
     } else if (
       !color(t.accent) ||
       ['brand', 'handle', 'message', 'subtitle'].some((k) => !str(t[k])) ||
       (t.image && !safeImage(t.image)) ||
-      ['membership', 'cardNumber', 'itemText'].some((k) => t[k] !== undefined && !str(t[k]))
+      ['membership', 'cardNumber', 'itemText', 'customer', 'date', 'amount'].some(
+        (k) => t[k] !== undefined && !str(t[k]),
+      )
     )
       fail('小票或会员卡模板不正确');
+    if (t.design !== undefined) validateDesign(t.design, safeImage, fail);
   }
   if (raw.watermarkMark && !safeImage(raw.watermarkMark)) fail('水印格式不正确');
   raw.current = raw.orders.some((o) => o.id === raw.current)
@@ -185,30 +170,66 @@ export function validateBackup(raw) {
 export function mergeBackup(current, incoming) {
   const merged = validateBackup(structuredClone(current));
   const source = validateBackup(structuredClone(incoming));
-  const allIds = new Set(['platforms','clients','archivedClients','orders','templates','assets','toolTemplates'].flatMap((key) => merged[key].map((item) => item.id)));
+  const allIds = new Set(
+    [
+      'platforms',
+      'clients',
+      'archivedClients',
+      'orders',
+      'templates',
+      'assets',
+      'toolTemplates',
+    ].flatMap((key) => merged[key].map((item) => item.id)),
+  );
   const newId = () => {
     let id;
-    do { id = globalThis.crypto?.randomUUID?.() || 'import_' + Date.now().toString(36) + Math.random().toString(36).slice(2); } while (allIds.has(id));
-    allIds.add(id); return id;
+    do {
+      id =
+        globalThis.crypto?.randomUUID?.() ||
+        'import_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+    } while (allIds.has(id));
+    allIds.add(id);
+    return id;
   };
-  const platforms = new Map(), clients = new Map(), orders = new Map();
+  const platforms = new Map(),
+    clients = new Map(),
+    orders = new Map();
   for (const item of source.platforms) {
     const existing = merged.platforms.find((record) => record.name === item.name);
-    const id = existing?.id || newId(); platforms.set(item.id, id);
+    const id = existing?.id || newId();
+    platforms.set(item.id, id);
     if (!existing) merged.platforms.push({ ...item, id });
   }
-  for (const key of ['clients','archivedClients']) for (const item of source[key]) {
-    if (clients.has(item.id)) throw new Error('旧备份包含重复的单主编号，已取消合并。');
-    const id = newId(); clients.set(item.id, id);
-    merged[key].push({ ...item, id, platforms: item.platforms.map((value) => platforms.get(value)) });
-  }
+  for (const key of ['clients', 'archivedClients'])
+    for (const item of source[key]) {
+      if (clients.has(item.id)) throw new Error('旧备份包含重复的单主编号，已取消合并。');
+      const id = newId();
+      clients.set(item.id, id);
+      merged[key].push({
+        ...item,
+        id,
+        platforms: item.platforms.map((value) => platforms.get(value)),
+      });
+    }
   for (const item of source.orders) {
-    const id = newId(); orders.set(item.id, id);
-    merged.orders.push({ ...item, id, platform: platforms.get(item.platform), client: clients.get(item.client) });
+    const id = newId();
+    orders.set(item.id, id);
+    merged.orders.push({
+      ...item,
+      id,
+      platform: platforms.get(item.platform),
+      client: clients.get(item.client),
+    });
   }
-  for (const item of source.templates) merged.templates.push({ ...item, id: newId(), platform: platforms.get(item.platform) });
+  for (const item of source.templates)
+    merged.templates.push({ ...item, id: newId(), platform: platforms.get(item.platform) });
   for (const item of source.assets) merged.assets.push({ ...item, id: newId() });
-  for (const item of source.toolTemplates) merged.toolTemplates.push({ ...item, id: newId(), ...(item.order ? { order: orders.get(item.order) || '' } : {}) });
+  for (const item of source.toolTemplates)
+    merged.toolTemplates.push({
+      ...item,
+      id: newId(),
+      ...(item.order ? { order: orders.get(item.order) || '' } : {}),
+    });
   if (!merged.current) merged.current = orders.get(source.current) || '';
   if (!merged.watermarkMark && source.watermarkMark) merged.watermarkMark = source.watermarkMark;
   return validateBackup(merged);

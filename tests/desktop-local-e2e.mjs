@@ -101,6 +101,9 @@ try {
   await action('new-client');
   await page.locator('[name=name]').fill('电脑端测试单主');
   await page.locator('[name=preferences]').fill('保留留白');
+  await page.locator('[name=cn]').fill('测试作者名');
+  await page.locator('[name=salutation]').fill('测试称呼');
+  await page.locator('[name=platformLink]').fill('https://example.com/client');
   assert.equal(await page.locator('[name=name]').inputValue(), '电脑端测试单主');
   assert.equal(await page.locator('[name=preferences]').inputValue(), '保留留白');
   await action('inline-platform');
@@ -112,15 +115,23 @@ try {
 
   await nav('templates');
   await action('new-template');
+  assert.equal(await page.locator('[name=duration]').count(), 0);
+  assert.equal(await page.locator('[name=category]').inputValue(), '');
+  assert.equal(await page.locator('#categories option').count(), 0);
   await page.locator('[name=title]').fill('电脑端头像模板');
   await page.locator('[name=category]').fill('头像');
   await page.locator('[name=deposit]').fill('100');
   await page.locator('[name=balance]').fill('200');
+  await page.locator('#custom-stage-name').fill('配色确认');
+  await action('add-custom-stage');
+  assert.equal(await page.locator('[name=optional-stage][value="配色确认"]').isChecked(), true);
   await page.locator('#save-order-btn').click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await nav('orders');
   await action('new-order');
   await page.locator('#order-template').selectOption({ label: '电脑端头像模板' });
+  assert.equal(await page.locator('[name=due]').inputValue(), '');
+  assert.equal(await page.locator('[name=optional-stage][value="配色确认"]').isChecked(), true);
   await page.locator('[name=title]').fill('本地电脑端稿件');
   await page.locator('[name=client]').selectOption({ label: '电脑端测试单主' });
   const date = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
@@ -146,6 +157,13 @@ try {
   await nav('clients');
   await page.locator('[data-action=client-detail]').first().click();
   assert.match(await page.getByRole('dialog').innerText(), /本地电脑端稿件/);
+  assert.match(await page.getByRole('dialog').innerText(), /测试作者名/);
+  assert.match(await page.getByRole('dialog').innerText(), /测试称呼/);
+  assert.match(await page.getByRole('dialog').innerText(), /合作次数\s*1 次/);
+  await page.locator('#client-history-search').fill('不匹配的关键词');
+  assert.equal(await page.locator('#client-history-list .detail-link').count(), 0);
+  await page.locator('#client-history-search').fill('本地电脑端');
+  assert.equal(await page.locator('#client-history-list .detail-link').count(), 1);
   await action('close-modal');
   await nav('home');
   assert.match(await page.locator('.current-body').innerText(), /电脑端稿件要求/);
@@ -154,13 +172,103 @@ try {
   await upload('upload-assets');
   await page.locator('.asset-item img').waitFor();
   await saved();
+  const customizeCanvas = async (kind) => {
+    assert.equal(await page.locator('.tool-settings [required]').count(), 0);
+    await page.locator('[data-design-global=font]').selectOption('song');
+    await page.locator('[data-design-global=color]').fill('#123456');
+    await page.locator('[data-design-global=bg]').fill('#f6f0e8');
+    await page.locator('[data-design-global=style]').selectOption('border');
+    if (kind !== 'layout') await page.locator('[data-design-global=preset]').selectOption('left');
+    const backgroundChooser = page.waitForEvent('filechooser');
+    await page.locator('[data-design-action=background]').click();
+    await (
+      await backgroundChooser
+    ).setFiles({ name: '底图.png', mimeType: 'image/png', buffer: png });
+    await page.locator('[data-design-action=clear-background]').waitFor();
+    const imageChooser = page.waitForEvent('filechooser');
+    await page.locator('[data-design-action=add-image]').click();
+    await (await imageChooser).setFiles({ name: '插图.png', mimeType: 'image/png', buffer: png });
+    await page.locator('.design-layer-name').filter({ hasText: '插图.png' }).waitFor();
+    await page.locator('[data-design-action=add-text]').click();
+    await page.locator('[data-design-prop=text]').fill('自定义交付文字');
+    await page.locator('[data-design-prop=font]').selectOption('kai');
+    await page.locator('[data-design-prop=width]').fill('280');
+    const x = Number(await page.locator('[data-design-prop=x]').inputValue());
+    const y = Number(await page.locator('[data-design-prop=y]').inputValue());
+    const canvas = page.locator('#output-canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(100);
+    const box = await canvas.boundingBox(),
+      size = await canvas.evaluate((c) => ({ width: c.width, height: c.height }));
+    await page.mouse.move(
+      box.x + (x / size.width) * box.width,
+      box.y + (y / size.height) * box.height,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + (x / size.width) * box.width + 30,
+      box.y + (y / size.height) * box.height + 20,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+    assert.ok(
+      Number(await page.locator('[data-design-prop=x]').inputValue()) > x + 1,
+      'text must move by a real pointer drag',
+    );
+    assert.ok(Number(await page.locator('[data-design-prop=y]').inputValue()) > y + 1);
+  };
   for (const kind of ['receipt', 'card', 'watermark', 'layout']) {
     await page.locator(`[data-action=open-tool][data-tool=${kind}]`).click();
     if (kind === 'receipt' || kind === 'card') {
       assert.equal(await page.locator('[data-tool-field=customer]').inputValue(), '电脑端测试单主');
+      if (kind === 'card') {
+        await page.locator('[data-tool-field=cardNumber]').fill('测试卡号');
+        assert.equal(
+          await page.getByRole('checkbox', { name: '显示卡号', exact: true }).isChecked(),
+          false,
+        );
+        await page.getByRole('checkbox', { name: '显示卡号', exact: true }).check();
+        await page.getByRole('checkbox', { name: '显示卡号', exact: true }).uncheck();
+      }
+      await customizeCanvas(kind);
       await page.locator('[data-tool-field=name]').fill(kind + '测试模板');
       await action('save-tool-template');
       await saved();
+      const originalTemplate = (await state()).toolTemplates.find((t) => t.kind === kind);
+      assert.equal(originalTemplate.design.font, 'song');
+      assert.equal(originalTemplate.design.color, '#123456');
+      assert.equal(originalTemplate.design.items.at(-1).text, '自定义交付文字');
+      assert.ok(originalTemplate.design.backgroundImage.startsWith('data:image/'));
+      await page.locator('[data-design-global=font]').selectOption('hei');
+      await action('update-tool-template');
+      await saved();
+      assert.equal((await state()).toolTemplates.filter((t) => t.kind === kind).length, 1);
+      await page.locator('[data-tool-field=name]').fill(kind + '副本模板');
+      await action('save-tool-template');
+      await saved();
+      assert.equal((await state()).toolTemplates.filter((t) => t.kind === kind).length, 2);
+      await action('new-tool-template');
+      await page
+        .locator(`[data-action=load-tool-template][data-id="${originalTemplate.id}"]`)
+        .click();
+      assert.equal(await page.locator('[data-design-global=font]').inputValue(), 'hei');
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: path.join(output, kind + '-custom-editor.png') });
+      if (kind === 'receipt') {
+        await action('new-tool-template');
+        await page.locator('[data-tool-field=customer]').fill('手动填写的单主');
+        await page.locator('[data-tool-field=name]').fill('手填信息模板');
+        await action('save-tool-template');
+        await saved();
+        const manual = (await state()).toolTemplates.find((t) => t.name === '手填信息模板');
+        assert.equal(manual.customer, '手动填写的单主');
+        await action('new-tool-template');
+        await page.locator(`[data-action=load-tool-template][data-id="${manual.id}"]`).click();
+        assert.equal(
+          await page.locator('[data-tool-field=customer]').inputValue(),
+          '手动填写的单主',
+        );
+      }
       const download = page.waitForEvent('download');
       await action(kind === 'receipt' ? 'export-pdf' : 'export-png');
       const file = await download;
@@ -179,9 +287,19 @@ try {
       assert.equal(await page.locator('[data-drop=watermark-mark] img').count(), 1);
     } else {
       await upload('upload-layout');
+      await customizeCanvas(kind);
       await page.locator('#layout-template-name').fill('电脑端排版模板');
       await action('save-layout-template');
       await saved();
+      const template = (await state()).toolTemplates.find((t) => t.kind === 'layout');
+      assert.equal(template.layout.items.at(-1).text, '自定义交付文字');
+      await page.locator('[data-design-global=font]').selectOption('mono');
+      await action('update-layout-template');
+      await saved();
+      assert.equal((await state()).toolTemplates.filter((t) => t.kind === 'layout').length, 1);
+      await action('new-layout-template');
+      await page.locator(`[data-action=load-layout-template][data-id="${template.id}"]`).click();
+      assert.equal(await page.locator('[data-design-global=font]').inputValue(), 'mono');
     }
     await action('tools-back');
   }
@@ -287,6 +405,11 @@ try {
           'blank initialization',
           'desktop width and left navigation',
           'client/platform/template/order create and edit',
+          'optional client CN / salutation / platform URL and searchable history',
+          'duration-free templates and persisted custom commission stages',
+          'editable fonts / colors / background / styles in three components',
+          'real text dragging, optional card number and manual template text',
+          'save as new / update / switch component templates',
           'private image persistence',
           'calendar and client associations',
           'receipt PDF and card PNG',

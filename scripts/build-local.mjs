@@ -21,7 +21,16 @@ if (path.resolve(web) !== path.resolve(root, 'local-dist', 'web'))
   throw new Error('页面输出目录不正确，停止构建。');
 await fs.rm(web, { recursive: true, force: true });
 await fs.mkdir(web, { recursive: true });
-for (const name of ['index.html', 'styles.css', 'app.js', 'model.js', 'storage.js', 'api.js'])
+for (const name of [
+  'index.html',
+  'styles.css',
+  'app.js',
+  'model.js',
+  'storage.js',
+  'api.js',
+  'design-model.js',
+  'designer.js',
+])
   await fs.copyFile(path.join(root, 'desktop', name), path.join(web, name));
 await fs.mkdir(path.join(web, 'mobile'), { recursive: true });
 for (const name of ['index.html', 'mobile.css'])
@@ -30,10 +39,11 @@ const core = await fs.readFile(path.join(root, 'desktop/app.js'), 'utf8');
 const mobile = await fs.readFile(path.join(root, 'mobile/mobile.js'), 'utf8');
 const point = core.lastIndexOf('  boot()');
 if (point < 0) throw new Error('未找到共享稿件逻辑的启动位置，停止手机版构建。');
-await fs.writeFile(path.join(web, 'mobile/app.js'),
+await fs.writeFile(
+  path.join(web, 'mobile/app.js'),
   (core.slice(0, point) + '\n' + mobile + '\n' + core.slice(point))
-    .replace("from './model.js'", "from '../model.js'")
-    .replace("from './storage.js'", "from '../storage.js'"));
+    .replace(/from ['"]\.\/([^'"]+)['"]/g, "from '../$1'"),
+);
 await build({
   configFile: false,
   ssr: { noExternal: true },

@@ -8,6 +8,7 @@ await fs.mkdir('artifacts', { recursive: true });
 const root = await fs.mkdtemp(path.resolve('artifacts/desktop-launcher-'));
 const base = 'http://127.0.0.1:17846';
 const desktop = path.join(root, 'Desktop');
+const startMenu = path.join(root, 'StartMenu');
 await fs.mkdir(desktop);
 function run(args) {
   const result = spawnSync(
@@ -44,6 +45,8 @@ try {
     '17846',
     '--desktop-dir',
     desktop,
+    '--start-menu-dir',
+    startMenu,
     '--no-browser',
     '--shortcut-no-browser',
   ]);
@@ -95,6 +98,26 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 250));
   assert.equal((await health())?.ui, 'desktop-blank');
   assert.deepEqual(await request('desktop-workspace'), before);
+  run(['stop']);
+  assert.ok(await fs.stat(path.join(startMenu, '创作者工作台.lnk')));
+  const menuLaunch = spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-Command',
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:LOTUS_MENU_SHORTCUT -WindowStyle Hidden",
+    ],
+    {
+      windowsHide: true,
+      encoding: 'utf8',
+      env: { ...process.env, LOTUS_MENU_SHORTCUT: path.join(startMenu, '创作者工作台.lnk') },
+    },
+  );
+  assert.equal(menuLaunch.status, 0, menuLaunch.stderr);
+  for (let i = 0; i < 80 && !(await health()); i++)
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal((await health())?.ui, 'desktop-blank');
+  assert.deepEqual(await request('desktop-workspace'), before);
   await fs.mkdir('artifacts/desktop-validation', { recursive: true });
   await fs.writeFile(
     'artifacts/desktop-validation/launcher-result.json',
@@ -108,6 +131,7 @@ try {
           'before-update backup',
           'single instance',
           'real Windows desktop shortcut',
+          'real Windows Start menu shortcut',
           'service restart persistence',
           'desktop HTML selected',
         ],
@@ -116,7 +140,9 @@ try {
       2,
     ),
   );
-  console.log('PASS desktop installation, update, single instance and actual Windows shortcut');
+  console.log(
+    'PASS desktop installation, update, single instance and actual desktop / Start menu shortcuts',
+  );
 } finally {
   run(['stop']);
 }

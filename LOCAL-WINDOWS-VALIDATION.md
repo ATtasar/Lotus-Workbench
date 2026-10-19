@@ -1,5 +1,7 @@
 # Windows 电脑端本地版验证记录
 
+**后续更新**：下文为原本地化版本的历史验收。2026-10-19 新增的桌面/开始菜单入口、组件编辑、自定义流程及单主资料已扩展为 60 项测试，当前范围见 [桌面自定义功能与验证](DESKTOP-CUSTOMIZATION.md)。新增样式仅用于组件控件，主界面沿用原布局。
+
 日期：2026-10-19。Windows 本地版，发布至 `ATtasar/Lotus-Workbench` 的默认 `main` 分支。本次以用户指定的 `commission-workbench/接稿工作台-空白版.html` 为唯一 UI 来源。原云端分支和 Android 工程保留，本次没有运行 APK、PostgreSQL 或云端部署。
 
 ## 当前电脑端：实际完成

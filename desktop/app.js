@@ -1,5 +1,7 @@
 import { initialData, validateBackup, mergeBackup } from './model.js';
 import { storage } from './storage.js';
+import { createDesign, prepareDesign } from './design-model.js';
+import { designerControls, drawDesign, bindDesigner, addDesignImages } from './designer.js';
 ('use strict');
 (() => {
   const $ = (s, root = document) => root.querySelector(s);
@@ -158,7 +160,7 @@ import { storage } from './storage.js';
     }
     data.toolTemplates.forEach((t) => {
       if (t.accent) set(t, 'accent', grayColor(t.accent));
-      if (t.layout?.bg) set(t.layout, 'bg', grayColor(t.layout.bg));
+      if (t.layout?.bg && t.layout.version !== 1) set(t.layout, 'bg', grayColor(t.layout.bg));
     });
     return changed;
   }
@@ -171,7 +173,10 @@ import { storage } from './storage.js';
     saveQueue = Promise.resolve(),
     pendingSaves = 0,
     failedSave = false;
-  let interactionBusy = 0, syncing = false, syncMessage = '', remoteNotice = -1;
+  let interactionBusy = 0,
+    syncing = false,
+    syncMessage = '',
+    remoteNotice = -1;
   const disabledDuringSave = new WeakMap();
   let page = ['home', 'calendar', 'orders', 'clients', 'templates', 'tools'].includes(
     location.hash.slice(1),
@@ -191,6 +196,8 @@ import { storage } from './storage.js';
     toolConfig = null,
     layout = { items: [], selected: -1, width: 1000, height: 1000, bg: '#efefef' },
     watermark = { mark: null, image: null, opacity: 0.55, size: 70, position: 'center' };
+  let layoutTemplateId = '',
+    layoutTemplateName = '';
   let toastTimer;
   const platform = (id) =>
     data.platforms.find((p) => p.id === id) || { name: '未分类', color: '#dadada', fee: 0 };
@@ -245,14 +252,19 @@ import { storage } from './storage.js';
     return saveQueue;
   }
   function updateSaveStatus() {
-    document.querySelectorAll('#order-form input,#order-form select,#order-form textarea,#client-form input,#client-form textarea,#platform-form input,#settings-form input,button[form]').forEach((field) => {
-      if (pendingSaves) {
-        if (!disabledDuringSave.has(field)) disabledDuringSave.set(field, field.disabled);
-        field.disabled = true;
-      } else if (disabledDuringSave.has(field)) {
-        field.disabled = disabledDuringSave.get(field); disabledDuringSave.delete(field);
-      }
-    });
+    document
+      .querySelectorAll(
+        '#order-form input,#order-form select,#order-form textarea,#client-form input,#client-form textarea,#platform-form input,#settings-form input,button[form]',
+      )
+      .forEach((field) => {
+        if (pendingSaves) {
+          if (!disabledDuringSave.has(field)) disabledDuringSave.set(field, field.disabled);
+          field.disabled = true;
+        } else if (disabledDuringSave.has(field)) {
+          field.disabled = disabledDuringSave.get(field);
+          disabledDuringSave.delete(field);
+        }
+      });
     const el = $('#save-status');
     if (el)
       el.innerHTML = failedSave
@@ -262,7 +274,15 @@ import { storage } from './storage.js';
           : syncMessage || '<span class="live-dot"></span>已保存到电脑';
   }
   function canRefresh() {
-    return !modal && !tool && !selected.size && !pendingSaves && !failedSave && !interactionBusy && !document.activeElement?.matches('input,textarea,select,[contenteditable=true]');
+    return (
+      !modal &&
+      !tool &&
+      !selected.size &&
+      !pendingSaves &&
+      !failedSave &&
+      !interactionBusy &&
+      !document.activeElement?.matches('input,textarea,select,[contenteditable=true]')
+    );
   }
   async function refreshRemote() {
     if (syncing || !data || document.hidden || failedSave) return;
@@ -272,30 +292,42 @@ import { storage } from './storage.js';
       if (version > storage.version()) {
         if (!canRefresh()) {
           syncMessage = '另一端有更新 · 结束编辑后同步';
-          if (remoteNotice !== version) { remoteNotice = version; toast('另一端已更新。当前输入会保留；保存时会检查冲突。'); }
+          if (remoteNotice !== version) {
+            remoteNotice = version;
+            toast('另一端已更新。当前输入会保留；保存时会检查冲突。');
+          }
         } else {
           const snapshot = await storage.readRemote();
           if (canRefresh() && snapshot.revision > storage.version()) {
             data = storage.acceptRemote(snapshot);
             watermark.mark = data.watermarkMark || null;
-            syncMessage = ''; render();
+            syncMessage = '';
+            render();
           }
         }
       } else syncMessage = '';
       updateSaveStatus();
     } catch (error) {
       if (syncMessage !== '电脑连接中断 · 未同步') toast(error.message);
-      syncMessage = '电脑连接中断 · 未同步'; updateSaveStatus();
-    } finally { syncing = false; }
+      syncMessage = '电脑连接中断 · 未同步';
+      updateSaveStatus();
+    } finally {
+      syncing = false;
+    }
   }
   async function boot() {
     data = await storage.load();
-    if (migrateAppearance() && !(await persist())) throw new Error('数据外观迁移未保存，请先导出备份。');
+    if (migrateAppearance() && !(await persist()))
+      throw new Error('数据外观迁移未保存，请先导出备份。');
     render();
-    setInterval(refreshRemote, Math.max(1000, Math.min(30000, window.LOTUS_CONFIG?.pollIntervalMs || 3000)));
+    setInterval(
+      refreshRemote,
+      Math.max(1000, Math.min(30000, window.LOTUS_CONFIG?.pollIntervalMs || 3000)),
+    );
     window.addEventListener('focus', refreshRemote);
     document.addEventListener('visibilitychange', refreshRemote);
-    if (storage.localAccess && new URLSearchParams(location.search).get('connect') === 'phone') await showLanSettings();
+    if (storage.localAccess && new URLSearchParams(location.search).get('connect') === 'phone')
+      await showLanSettings();
   }
   const navItems = [
     ['home', '主页', 'home'],
@@ -312,7 +344,7 @@ import { storage } from './storage.js';
     $('#app').innerHTML =
       `<aside class="sidebar"><a href="#home" class="brand" data-action="nav" data-page="home"><div class="brand-mark">稿</div><div class="brand-name">${e(data.profile.name)}<small>个人接稿管理</small></div></a><div class="nav-label">工作空间</div><nav class="nav" aria-label="主要导航">${navItems.map(([id, label, ic]) => `<button type="button" data-action="nav" data-page="${id}" class="${page === id ? 'active' : ''}" title="${label}" aria-label="${label}" ${page === id ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span>${id === 'orders' ? `<span class="nav-count">${count}</span>` : ''}</button>`).join('')}</nav><div class="sidebar-spacer"></div><div class="sidebar-storage"><div class="row">${icon('folder')} 本地工作空间</div><p>资料保存在本地电脑<br>可在设置中导出备份</p></div><div class="sidebar-foot"><button class="profile" data-action="settings" aria-label="工作室设置"><div class="avatar">${e(data.profile.artist.slice(0, 1))}</div><div><strong>${e(data.profile.artist)}</strong><small>工作台设置</small></div>${icon('settings')}</button></div></aside><div class="shell"><header class="topbar"><div class="breadcrumb">工作空间 ${icon('chevron')}<span>${currentName}</span></div><div class="top-actions"><span class="small muted" id="save-status"><span class="live-dot"></span>已自动保存</span><button class="pill-outline" data-action="settings">本地存储</button>${iconBtn('bell', 'reminders', '截稿提醒')}</div></header><main class="content" id="main-content">${{ home: renderHome, orders: renderOrders, clients: renderClients, calendar: renderCalendar, templates: renderTemplates, tools: renderTools }[page]()}<footer class="footer"><span>${e(data.profile.name)} · 本地工作空间</span><span>数据保存在本地电脑</span></footer></main></div>`;
     updateSaveStatus();
-    if (page === 'tools' && tool) requestAnimationFrame(drawCurrentTool);
+    if (page === 'tools' && tool) drawCurrentTool();
   }
 
   function intro(_eyebrow, title, desc, action = 'new-order', label = '新建稿件') {
@@ -346,7 +378,7 @@ import { storage } from './storage.js';
   }
   function stagesHTML(o) {
     const idx = o.stages.indexOf(o.status);
-    return `<div class="stages">${o.stages.map((s, i) => `<button class="stage ${i < idx ? 'done' : ''} ${i === idx ? 'active' : ''}" data-action="set-stage" data-id="${o.id}" data-stage="${s}" title="切换到${s}"><span class="stage-ball">${i < idx ? icon('check') : ''}</span>${s}</button>`).join('')}</div>`;
+    return `<div class="stages">${o.stages.map((s, i) => `<button class="stage ${i < idx ? 'done' : ''} ${i === idx ? 'active' : ''}" data-action="set-stage" data-id="${o.id}" data-stage="${e(s)}" title="切换到${e(s)}"><span class="stage-ball">${i < idx ? icon('check') : ''}</span>${e(s)}</button>`).join('')}</div>`;
   }
   function renderHome() {
     const d = addDays(monday(now()), weekOffset * 7),
@@ -404,6 +436,9 @@ import { storage } from './storage.js';
             o.name,
             o.category,
             o.preferences,
+            o.cn,
+            o.salutation,
+            o.platformLink,
             o.notes,
             o.client ? client(o.client).name : '',
           ]
@@ -413,7 +448,7 @@ import { storage } from './storage.js';
     );
   }
   function toolbar(type) {
-    return `<div class="toolbar"><label class="searchbox">${icon('search')}<input id="list-search" placeholder="${type === 'clients' ? '搜索单主名称、偏好…' : '搜索稿件、单主或类别…'}" value="${e(search)}" aria-label="搜索"></label><select class="filter" id="platform-filter" aria-label="筛选平台"><option value="">全部平台</option>${platformOptions(platformFilter)}</select>${type === 'orders' ? `<select class="filter" id="status-filter" aria-label="筛选状态"><option value="">全部状态</option>${['未开始', '草稿', '线稿', '上色', '成图', '完成', '退单'].map((s) => `<option ${s === statusFilter ? 'selected' : ''}>${s}</option>`).join('')}</select>` : ''}<span class="grow"></span><span class="toolbar-count">${selected.size ? `已选择 ${selected.size} 项` : ''}</span>${btn(icon('settings') + '平台管理', 'platform-manager', 'small')}${btn('全选', 'select-all', 'small', `data-type="${type}"`)}</div>${selected.size ? `<div class="batchbar">${icon('check')} 已选择 ${selected.size} 项<span class="grow"></span>${btn('取消选择', 'deselect-all', 'small')}${btn(icon('trash') + '删除所选', 'delete-selected', 'small danger', `data-type="${type}"`)}</div>` : ''}`;
+    return `<div class="toolbar"><label class="searchbox">${icon('search')}<input id="list-search" placeholder="${type === 'clients' ? '搜索单主名称、偏好…' : '搜索稿件、单主或类别…'}" value="${e(search)}" aria-label="搜索"></label><select class="filter" id="platform-filter" aria-label="筛选平台"><option value="">全部平台</option>${platformOptions(platformFilter)}</select>${type === 'orders' ? `<select class="filter" id="status-filter" aria-label="筛选状态"><option value="">全部状态</option>${[...new Set(['未开始', '草稿', '线稿', '上色', '成图', '完成', '退单', ...data.orders.flatMap((o) => o.stages)])].map((s) => `<option ${s === statusFilter ? 'selected' : ''}>${e(s)}</option>`).join('')}</select>` : ''}<span class="grow"></span><span class="toolbar-count">${selected.size ? `已选择 ${selected.size} 项` : ''}</span>${btn(icon('settings') + '平台管理', 'platform-manager', 'small')}${btn('全选', 'select-all', 'small', `data-type="${type}"`)}</div>${selected.size ? `<div class="batchbar">${icon('check')} 已选择 ${selected.size} 项<span class="grow"></span>${btn('取消选择', 'deselect-all', 'small')}${btn(icon('trash') + '删除所选', 'delete-selected', 'small danger', `data-type="${type}"`)}</div>` : ''}`;
   }
   function platformOptions(value) {
     return data.platforms
@@ -443,7 +478,7 @@ import { storage } from './storage.js';
         .map((c) => {
           const orders = data.orders.filter((o) => o.client === c.id);
           const count = orders.filter((o) => !['完成', '退单'].includes(o.status)).length;
-          return `<article class="entity-card client-row" data-action="client-detail" data-id="${c.id}"><div class="color-strip" style="background:${clientGradient(c)}"></div><input type="checkbox" class="entity-check entity-select" data-id="${c.id}" aria-label="选择${e(c.name)}" ${selected.has(c.id) ? 'checked' : ''}><div class="client-identity"><div class="avatar">${e(c.name.slice(0, 1))}</div><div><h3>${e(c.name)}</h3><small>${count ? count + ' 份进行中' : '暂无进行中稿件'}</small></div></div><div class="client-platforms">${c.platforms.map((id) => `<span class="platform-tag" style="--platform:${platform(id).color}"><i class="dot"></i>${e(platform(id).name)}</span>`).join('')}</div><p class="client-bio">${e(c.preferences || '未填写偏好')}</p><span class="client-count">${orders.length}<small>份</small></span><span class="client-revenue">${money(orders.filter((o) => o.status !== '退单').reduce((a, o) => a + gross(o), 0))}</span>${iconBtn('chevron', 'client-detail', '查看单主档案', `data-id="${c.id}"`)}</article>`;
+          return `<article class="entity-card client-row" data-action="client-detail" data-id="${c.id}"><div class="color-strip" style="background:${clientGradient(c)}"></div><input type="checkbox" class="entity-check entity-select" data-id="${c.id}" aria-label="选择${e(c.name)}" ${selected.has(c.id) ? 'checked' : ''}><div class="client-identity"><div class="avatar">${e(c.name.slice(0, 1))}</div><div><h3>${e(c.name)}</h3><small>${c.salutation ? e(c.salutation) + ' · ' : ''}合作 ${orders.filter((o) => o.status !== '退单').length} 次</small></div></div><div class="client-platforms">${c.platforms.map((id) => `<span class="platform-tag" style="--platform:${platform(id).color}"><i class="dot"></i>${e(platform(id).name)}</span>`).join('')}</div><p class="client-bio">${e(c.preferences || '未填写偏好')}</p><span class="client-count">${orders.length}<small>份</small></span><span class="client-revenue">${money(orders.filter((o) => o.status !== '退单').reduce((a, o) => a + gross(o), 0))}</span>${iconBtn('chevron', 'client-detail', '查看单主档案', `data-id="${c.id}"`)}</article>`;
         })
         .join(
           '',
@@ -456,7 +491,7 @@ import { storage } from './storage.js';
     return (
       intro('', '稿件模板', '保存常用的稿件类型、价格和制作流程。', 'new-template', '新建模板') +
       toolbar('templates') +
-      `<div class="cards-grid">${items.map((t) => `<article class="entity-card template-card" data-action="edit-template" data-id="${t.id}" style="--platform:${platform(t.platform).color}"><div class="color-strip"></div><div class="template-hero"><img src="${e(t.images[0] || artwork(0))}" alt="${e(t.title)}模板预览"><span class="badge">${e(platform(t.platform).name)}</span><input type="checkbox" class="entity-check entity-select" data-id="${t.id}" aria-label="选择${e(t.title)}" ${selected.has(t.id) ? 'checked' : ''}></div><div class="entity-body"><h3>${e(t.title)}</h3><p>${e(t.category)} · 预计 ${t.duration} 天 · ${t.stages.length} 个流程节点</p><div class="row between"><span class="template-amount">${money(gross(t))}<small> / 起</small></span>${btn('使用模板 ' + icon('arrow'), 'use-template', 'small green', `data-id="${t.id}"`)}</div><div class="entity-bottom" style="margin-top:18px"><span>平台费 ${t.fee}% · 可在稿件中自由修改</span><span>编辑 ${icon('chevron')}</span></div></div></article>`).join('')}</div>${!items.length ? '<div class="panel empty">当前平台暂无稿件模板。</div>' : ''}`
+      `<div class="cards-grid">${items.map((t) => `<article class="entity-card template-card" data-action="edit-template" data-id="${t.id}" style="--platform:${platform(t.platform).color}"><div class="color-strip"></div><div class="template-hero"><img src="${e(t.images[0] || artwork(0))}" alt="${e(t.title)}模板预览"><span class="badge">${e(platform(t.platform).name)}</span><input type="checkbox" class="entity-check entity-select" data-id="${t.id}" aria-label="选择${e(t.title)}" ${selected.has(t.id) ? 'checked' : ''}></div><div class="entity-body"><h3>${e(t.title)}</h3><p>${e(t.category)} · ${t.stages.length} 个流程节点</p><div class="row between"><span class="template-amount">${money(gross(t))}<small> / 起</small></span>${btn('使用模板 ' + icon('arrow'), 'use-template', 'small green', `data-id="${t.id}"`)}</div><div class="entity-bottom" style="margin-top:18px"><span>平台费 ${t.fee}% · 可在稿件中自由修改</span><span>编辑 ${icon('chevron')}</span></div></div></article>`).join('')}</div>${!items.length ? '<div class="panel empty">当前平台暂无稿件模板。</div>' : ''}`
     );
   }
   function renderCalendar() {
@@ -581,7 +616,7 @@ import { storage } from './storage.js';
       );
       toolConfig.order = data.current || data.orders[0]?.id || '';
       const o = data.orders.find((o) => o.id === toolConfig.order);
-      toolConfig.customer = o ? client(o.client).name : '';
+      toolConfig.customer = o ? client(o.client).name : toolConfig.customer || '';
       toolConfig.membership = toolConfig.membership || '';
       toolConfig.cardNumber = toolConfig.cardNumber || '';
     }
@@ -620,11 +655,60 @@ import { storage } from './storage.js';
           )}</select></label><div class="row">${btn('清除原图', 'clear-base', 'small')}${btn('清除水印', 'clear-mark', 'small')}</div>${assetPicker('watermark')}<p class="hint" style="margin-top:18px">换原图时，水印会留下来。水印也会保存在本地电脑，下次打开继续用。</p></section><section class="panel preview-panel"><div class="eyebrow" style="margin-bottom:20px">合成预览</div><canvas id="output-canvas" width="800" height="650" aria-label="水印合成结果预览"></canvas><div class="canvas-actions">${btn(icon('copy') + '复制图片', 'copy-output', 'primary')}${btn(icon('download') + '保存 PNG', 'export-png')}${btn('JPG', 'export-jpg', 'small')}</div></section></div>`
       );
     if (tool === 'layout') return top + header + renderLayoutEditor();
-    const c = toolConfig;
+    return renderComponentEditor(top, header);
+  }
+  function componentValue(key) {
+    const c = toolConfig || {},
+      o = data.orders.find((item) => item.id === c.order);
+    if (key === 'itemText')
+      return o
+        ? [o.title, ...o.extras.map((x) => `${x.name} ${money(x.amount)}`)].join('\n')
+        : c.itemText || '';
+    if (key === 'amount') return o ? money(gross(o)) : c.amount || '';
+    if (key === 'date') return o ? o.due : c.date || '';
+    if (key === 'cardNumber') return c.cardNumber ? '卡号 ' + c.cardNumber : '';
+    return c[key] || '';
+  }
+  function ensureToolDesign() {
+    if (!toolConfig.design) {
+      toolConfig.design = createDesign(tool, toolConfig);
+      if (toolConfig.image)
+        toolConfig.design.items.push({
+          kind: 'image',
+          name: '原模板图片',
+          src: toolConfig.image,
+          x: toolConfig.design.width * 0.7,
+          y: toolConfig.design.height * 0.7,
+          scale: 30,
+          rotation: 0,
+          visible: true,
+        });
+    }
+    return toolConfig.design;
+  }
+  function renderComponentEditor(top, header) {
+    const c = toolConfig,
+      design = ensureToolDesign();
+    const fields = [
+      ['customer', '单主名称'],
+      ['brand', '工作室 / 画师名称'],
+      ['handle', '平台名称、账号或联系方式'],
+      ...(tool === 'card'
+        ? [
+            ['membership', '会员称呼'],
+            ['cardNumber', '卡号'],
+          ]
+        : []),
+      ['itemText', '稿件内容（未关联时）'],
+      ['amount', '金额（未关联时）'],
+      ['date', '日期（未关联时）'],
+      ['message', '附加说明'],
+      ['subtitle', '凭证说明'],
+    ];
     return (
       top +
       header +
-      `<div class="tool-saved-list">${data.toolTemplates
+      `<div class="tool-saved-list">${btn('新建空白模板', 'new-tool-template', 'small')}${data.toolTemplates
         .filter((t) => t.kind === tool)
         .map(
           (t) =>
@@ -632,7 +716,7 @@ import { storage } from './storage.js';
         )
         .join(
           '',
-        )}</div><div class="tool-workspace"><section class="panel tool-settings"><label class="field"><span>关联稿件</span><select id="tool-order"><option value="">不关联，手动填写</option>${data.orders
+        )}</div><div class="tool-workspace"><section class="panel tool-settings"><label class="field"><span>关联稿件（可选）</span><select id="tool-order"><option value="">不关联，手动填写</option>${data.orders
         .filter((o) => o.status !== '退单')
         .map(
           (o) =>
@@ -640,7 +724,7 @@ import { storage } from './storage.js';
         )
         .join(
           '',
-        )}</select></label><label class="field"><span>单主名称</span><input data-tool-field="customer" value="${e(c.customer)}" placeholder="请输入单主名称"></label><label class="field"><span>工作室 / 画师名称</span><input data-tool-field="brand" value="${e(c.brand)}"></label><label class="field"><span>平台名称、账号或联系方式</span><textarea data-tool-field="handle" rows="2" style="min-height:54px">${e(c.handle)}</textarea></label>${tool === 'card' ? `<div class="form-grid"><label class="field"><span>会员称呼</span><input data-tool-field="membership" value="${e(c.membership)}"></label><label class="field"><span>卡号</span><input data-tool-field="cardNumber" value="${e(c.cardNumber)}"></label></div>` : `<label class="field"><span>未关联订单时的购买内容</span><input data-tool-field="itemText" value="${e(c.itemText || '稿件委托')}"></label>`}<label class="field" style="margin-top:13px"><span>附加说明</span><textarea data-tool-field="message">${e(c.message)}</textarea></label><label class="field"><span>凭证说明</span><input data-tool-field="subtitle" value="${e(c.subtitle)}"></label><label class="field"><span>模板底色</span><input type="color" data-tool-field="accent" value="${c.accent}"></label><div class="dropzone" data-drop="tool-image" data-action="upload-tool-image">${c.image ? `<img src="${e(c.image)}" alt="小票或会员卡插图">` : icon('image')}拖入${tool === 'card' ? '卡片素材' : '作品例图'} / 点击上传</div>${c.image ? `<div style="text-align:right;margin-top:5px">${btn('移除图片', 'clear-tool-image', 'small')}</div>` : ''}${assetPicker('tool')}<div class="divider"></div><label class="field"><span>模板名称</span><input data-tool-field="name" value="${e(c.name)}"></label><div class="row" style="flex-wrap:wrap">${btn('另存为模板', 'save-tool-template', 'small green')}${c.id ? btn('更新模板', 'update-tool-template', 'small') : ''}${c.id ? iconBtn('trash', 'delete-tool-template', '删除当前模板') : ''}</div></section><section class="panel preview-panel"><div class="eyebrow" style="margin-bottom:20px">${tool === 'card' ? '会员卡预览' : '小票预览'}</div><canvas id="output-canvas" aria-label="${title}实时预览"></canvas><div class="canvas-actions">${btn(icon('copy') + '复制图片', 'copy-output', 'primary')}${btn('PNG', 'export-png')}${btn('JPG', 'export-jpg')}${btn('PDF', 'export-pdf')}</div></section></div>`
+        )}</select></label><details open><summary>文字信息（均为选填）</summary><div class="form-grid">${fields.map(([key, label]) => `<label class="field"><span>${label}</span>${['handle', 'message'].includes(key) ? `<textarea data-tool-field="${key}">${e(c[key] || '')}</textarea>` : `<input data-tool-field="${key}" value="${e(c[key] || '')}">`}</label>`).join('')}</div></details><div class="divider"></div>${designerControls(design, componentValue, tool)}<div class="dropzone" data-drop="tool-image" data-action="upload-tool-image">${icon('image')}拖入 / 上传图片到画布</div>${assetPicker('tool')}<div class="divider"></div><label class="field"><span>模板名称</span><input data-tool-field="name" value="${e(c.name)}"></label><div class="row design-actions">${btn('另存为新模板', 'save-tool-template', 'small green')}${c.id ? btn('更新当前模板', 'update-tool-template', 'small') + iconBtn('trash', 'delete-tool-template', '删除当前模板') : ''}</div></section><section class="panel preview-panel" data-drop="tool-image"><div class="eyebrow">${tool === 'card' ? '会员卡预览' : '小票预览'}</div><canvas id="output-canvas" tabindex="0" aria-label="${toolNames[tool]}实时预览，点击并拖动文字或图片"></canvas><div class="canvas-actions">${btn(icon('copy') + '复制图片', 'copy-output', 'primary')}${btn('PNG', 'export-png')}${btn('JPG', 'export-jpg')}${btn('PDF', 'export-pdf')}</div></section></div>`
     );
   }
   function assetPicker(mode) {
@@ -649,16 +733,16 @@ import { storage } from './storage.js';
       : '';
   }
   function renderLayoutEditor() {
-    const s = layout.items[layout.selected];
-    return `<div class="tool-saved-list">${data.toolTemplates
+    layout = prepareDesign(layout);
+    return `<div class="tool-saved-list">${btn('新建空白模板', 'new-layout-template', 'small')}${data.toolTemplates
       .filter((t) => t.kind === 'layout')
       .map(
         (t) =>
-          `<span class="row" style="gap:3px"><button data-action="load-layout-template" data-id="${t.id}">${e(t.name)}</button><button data-action="delete-tool-template" data-id="${t.id}" aria-label="删除${e(t.name)}模板" title="删除模板">×</button></span>`,
+          `<span class="row"><button data-action="load-layout-template" data-id="${t.id}" class="${t.id === layoutTemplateId ? 'active' : ''}">${e(t.name)}</button><button data-action="delete-tool-template" data-id="${t.id}" aria-label="删除${e(t.name)}模板">×</button></span>`,
       )
       .join(
         '',
-      )}</div><div class="tool-workspace"><section class="panel tool-settings"><h3>画布设置</h3><div class="form-grid"><label class="field"><span>宽度（像素）</span><input id="layout-width" type="number" min="200" max="4000" value="${layout.width}"></label><label class="field"><span>高度（像素）</span><input id="layout-height" type="number" min="200" max="4000" value="${layout.height}"></label></div><label class="field" style="margin-top:14px"><span>画布背景色</span><input type="color" id="layout-bg" value="${layout.bg}"></label><div class="dropzone" data-drop="layout" data-action="upload-layout">${icon('upload')}拖入图片素材 / 点击上传</div>${assetPicker('layout')}<div class="divider"></div><h3 style="font-size:12px;margin-bottom:14px">${s ? '已选择：' + e(s.name) : '点击画布上的图片进行调整'}</h3><label class="field"><span>缩放</span><div class="field-range"><input id="layout-scale" type="range" min="5" max="200" value="${s ? s.scale : 50}" ${s ? '' : 'disabled'}><span id="layout-scale-value">${s ? s.scale : 50}%</span></div></label><label class="field"><span>旋转</span><div class="field-range"><input id="layout-rotation" type="range" min="-180" max="180" value="${s ? s.rotation : 0}" ${s ? '' : 'disabled'}><span id="layout-rotation-value">${s ? s.rotation : 0}°</span></div></label><div class="row" style="flex-wrap:wrap">${btn('移到顶层', 'layout-front', 'small', s ? '' : 'disabled')}${btn('移到底层', 'layout-back', 'small', s ? '' : 'disabled')}${btn('删除素材', 'layout-remove', 'small danger', s ? '' : 'disabled')}</div><div class="divider"></div><label class="field"><span>将这次排版存为模板</span><input id="layout-template-name" placeholder="例如：三图横排"></label>${btn('保存排版模板', 'save-layout-template', 'small green')}<p class="hint" style="margin-top:15px">拖动移动图片。方向键微调，删除键移除素材，按住换档键可加快移动。复制与导出会自动隐藏选中框。</p></section><section class="panel preview-panel" data-drop="layout"><canvas id="output-canvas" tabindex="0" aria-label="自由排版画布，点击并拖动图片，方向键移动"></canvas><div class="canvas-actions">${btn(icon('copy') + '复制图片', 'copy-output', 'primary')}${btn('PNG', 'export-png')}${btn('JPG', 'export-jpg')}${btn('PDF', 'export-pdf')}</div></section></div>`;
+      )}</div><div class="tool-workspace"><section class="panel tool-settings">${designerControls(layout, () => '', 'layout')}<div class="dropzone" data-drop="layout" data-action="upload-layout">${icon('upload')}拖入图片素材 / 点击上传</div>${assetPicker('layout')}<div class="divider"></div><label class="field"><span>模板名称</span><input id="layout-template-name" value="${e(layoutTemplateName)}" placeholder="请输入模板名称"></label><div class="row design-actions">${btn('另存为新模板', 'save-layout-template', 'small green')}${layoutTemplateId ? btn('更新当前模板', 'update-layout-template', 'small') : ''}</div><p class="hint">拖动文字和图片。方向键微调，删除键移除图层。导出时隐藏选中框。</p></section><section class="panel preview-panel" data-drop="layout"><canvas id="output-canvas" tabindex="0" aria-label="自由排版画布，点击并拖动文字或图片"></canvas><div class="canvas-actions">${btn(icon('copy') + '复制图片', 'copy-output', 'primary')}${btn('PNG', 'export-png')}${btn('JPG', 'export-jpg')}${btn('PDF', 'export-pdf')}</div></section></div>`;
   }
   function showModal(title, body, foot = '', cls = '') {
     if (!$('#modal-root').firstElementChild) lastFocus = document.activeElement;
@@ -714,7 +798,6 @@ import { storage } from './storage.js';
           notes: '',
           images: [],
           paid: false,
-          duration: 7,
           created: today(),
         },
     );
@@ -729,12 +812,12 @@ import { storage } from './storage.js';
       templates = data.templates.filter((t) => t.platform === o.platform);
     showModal(
       `${modal.isNew ? '新建' : '编辑'}${isTemplate ? '稿件模板' : '稿件'}`,
-      `<form id="order-form"><div class="modal-section"><div class="section-label"><span class="number">01</span> 基本信息</div><div class="form-grid"><label class="field"><span>所属平台 *</span><div class="field-inline"><select name="platform" required><option value="">选择平台</option>${platformOptions(o.platform)}</select>${iconBtn('plus', 'inline-platform', '新建平台')}</div></label>${!isTemplate ? `<label class="field"><span>快速使用模板（可选）</span><select id="order-template"><option value="">从空白稿件开始</option>${templates.map((t) => `<option value="${t.id}">${e(t.title)}</option>`).join('')}</select></label>` : `<label class="field"><span>预计工期 / 天 *</span><input type="number" name="duration" min="1" max="3650" required value="${o.duration || 7}"></label>`}</div><div id="inline-platform-form" class="hidden" style="padding:15px;background:#f8f8f8;border-radius:9px;margin-top:15px"><div class="form-grid"><label class="field"><span>新平台名称</span><input id="new-platform-name" maxlength="24" placeholder="平台名称"></label><label class="field"><span>标识灰度</span><input type="color" id="new-platform-color" value="#cecece"></label><label class="field"><span>默认平台费 / %</span><input type="number" id="new-platform-fee" min="0" max="100" value="0"></label><div class="row" style="align-items:end">${btn('添加并选择', 'save-inline-platform', 'small green')}</div></div></div><div class="form-grid" style="margin-top:15px"><label class="field ${isTemplate ? 'full' : ''}"><span>${isTemplate ? '模板' : '稿件'}名称 *</span><input name="title" required maxlength="100" value="${e(o.title)}" placeholder="例如：春日来信 · 花与少女"></label>${!isTemplate ? `<label class="field"><span>单主 *</span><div class="field-inline"><select name="client" required><option value="">选择此平台的单主</option>${filteredClients.map((c) => `<option value="${c.id}" ${c.id === o.client ? 'selected' : ''}>${e(c.name)}</option>`).join('')}</select>${iconBtn('plus', 'quick-client', '新建单主')}</div></label>` : ''}<label class="field"><span>稿件类别 *</span><input name="category" list="categories" required maxlength="40" value="${e(o.category)}"><datalist id="categories"><option>头像</option><option>半身插画</option><option>角色立绘</option><option>场景插画</option><option>其他</option></datalist></label><div class="field"><span>平台标识</span><div class="row" style="height:38px"><span style="background:${p.color};width:25px;height:25px;border-radius:6px"></span><span class="small muted">保存后会同步到日历与列表</span></div></div></div></div><div class="modal-section"><div class="section-label"><span class="number">02</span> 费用设置</div><div class="form-grid"><label class="field"><span>定金 / 元 *</span><input type="number" name="deposit" min="0" max="10000000" step="0.01" required value="${o.deposit}"></label><label class="field"><span>尾款 / 元 *</span><input type="number" name="balance" min="0" max="10000000" step="0.01" required value="${o.balance}"></label><label class="field"><span>平台费率 / %</span><input type="number" name="fee" min="0" max="100" step="0.01" value="${o.fee}"></label>${!isTemplate ? `<div class="field"><span>收款状态</span><label class="check-row" style="height:38px"><input type="checkbox" name="paid" ${o.paid ? 'checked' : ''}> 已收到全部款项</label></div>` : ''}</div><div style="margin-top:14px"><div class="row between" style="margin-bottom:9px"><span class="settings-note">额外服务（计入总金额）</span>${btn(icon('plus') + '添加服务', 'add-service', 'small')}</div><div id="service-rows">${o.extras.map((x, i) => serviceHTML(x, i)).join('')}</div></div><div class="money-preview"><span>稿件总额 <span id="gross-preview">${money(gross(o))}</span> · 扣除平台费后</span><strong id="net-preview">${money(net(o))}</strong></div></div><div class="modal-section"><div class="section-label"><span class="number">03</span> 制作流程与排期</div><span class="hint">默认流程：未开始 → 成图 → 完成。需要中间步骤时勾选即可。</span><div class="check-options">${['草稿', '线稿', '上色'].map((s) => `<label class="check-row"><input name="optional-stage" type="checkbox" value="${s}" ${o.stages.includes(s) ? 'checked' : ''}>${s}</label>`).join('')}</div>${
+      `<form id="order-form"><div class="modal-section"><div class="section-label"><span class="number">01</span> 基本信息</div><div class="form-grid"><label class="field"><span>所属平台 *</span><div class="field-inline"><select name="platform" required><option value="">选择平台</option>${platformOptions(o.platform)}</select>${iconBtn('plus', 'inline-platform', '新建平台')}</div></label>${!isTemplate ? `<label class="field"><span>快速使用模板（可选）</span><select id="order-template"><option value="">从空白稿件开始</option>${templates.map((t) => `<option value="${t.id}">${e(t.title)}</option>`).join('')}</select></label>` : ''}</div><div id="inline-platform-form" class="hidden" style="padding:15px;background:#f8f8f8;border-radius:9px;margin-top:15px"><div class="form-grid"><label class="field"><span>新平台名称</span><input id="new-platform-name" maxlength="24" placeholder="平台名称"></label><label class="field"><span>标识灰度</span><input type="color" id="new-platform-color" value="#cecece"></label><label class="field"><span>默认平台费 / %</span><input type="number" id="new-platform-fee" min="0" max="100" value="0"></label><div class="row" style="align-items:end">${btn('添加并选择', 'save-inline-platform', 'small green')}</div></div></div><div class="form-grid" style="margin-top:15px"><label class="field ${isTemplate ? 'full' : ''}"><span>${isTemplate ? '模板' : '稿件'}名称 *</span><input name="title" required maxlength="100" value="${e(o.title)}" placeholder="请输入名称"></label>${!isTemplate ? `<label class="field"><span>单主 *</span><div class="field-inline"><select name="client" required><option value="">选择此平台的单主</option>${filteredClients.map((c) => `<option value="${c.id}" ${c.id === o.client ? 'selected' : ''}>${e(c.name)}</option>`).join('')}</select>${iconBtn('plus', 'quick-client', '新建单主')}</div></label>` : ''}<label class="field"><span>稿件类别 *</span><input name="category" required maxlength="40" value="${e(o.category)}" placeholder="自行填写稿件类别"></label><div class="field"><span>平台标识</span><div class="row" style="height:38px"><span style="background:${p.color};width:25px;height:25px;border-radius:6px"></span><span class="small muted">保存后会同步到日历与列表</span></div></div></div></div><div class="modal-section"><div class="section-label"><span class="number">02</span> 费用设置</div><div class="form-grid"><label class="field"><span>定金 / 元 *</span><input type="number" name="deposit" min="0" max="10000000" step="0.01" required value="${o.deposit}"></label><label class="field"><span>尾款 / 元 *</span><input type="number" name="balance" min="0" max="10000000" step="0.01" required value="${o.balance}"></label><label class="field"><span>平台费率 / %</span><input type="number" name="fee" min="0" max="100" step="0.01" value="${o.fee}"></label>${!isTemplate ? `<div class="field"><span>收款状态</span><label class="check-row" style="height:38px"><input type="checkbox" name="paid" ${o.paid ? 'checked' : ''}> 已收到全部款项</label></div>` : ''}</div><div style="margin-top:14px"><div class="row between" style="margin-bottom:9px"><span class="settings-note">额外服务（计入总金额）</span>${btn(icon('plus') + '添加服务', 'add-service', 'small')}</div><div id="service-rows">${o.extras.map((x, i) => serviceHTML(x, i)).join('')}</div></div><div class="money-preview"><span>稿件总额 <span id="gross-preview">${money(gross(o))}</span> · 扣除平台费后</span><strong id="net-preview">${money(net(o))}</strong></div></div><div class="modal-section"><div class="section-label"><span class="number">03</span> 制作流程与排期</div><span class="hint">保留默认流程，可勾选中间步骤并添加自定义流程。</span><div class="check-options">${[...new Set([...o.stages.slice(1, -2), '草稿', '线稿', '上色'])].map((s) => `<label class="check-row"><input name="optional-stage" type="checkbox" value="${e(s)}" ${o.stages.includes(s) ? 'checked' : ''}>${e(s)}</label>`).join('')}</div><div class="row" style="margin:12px 0"><input id="custom-stage-name" maxlength="40" placeholder="自定义流程名称" aria-label="自定义流程名称">${btn('添加流程', 'add-custom-stage', 'small')}</div>${
         !isTemplate
           ? `<div class="form-grid"><label class="field"><span>开始日期（不填则为今天）</span><input type="date" name="start" value="${o.start}"></label><label class="field"><span>截止日期 *</span><input type="date" name="due" required value="${o.due}"></label><label class="field"><span>当前状态</span><select name="status">${allStages(
               o,
             )
-              .map((s) => `<option ${s === o.status ? 'selected' : ''}>${s}</option>`)
+              .map((s) => `<option ${s === o.status ? 'selected' : ''}>${e(s)}</option>`)
               .join('')}</select></label></div>`
           : ''
       }</div><div class="modal-section"><div class="section-label"><span class="number">04</span> ${isTemplate ? '通用要求与示例图' : '设定、要求与参考图'}（可选）</div><label class="field"><span>${isTemplate ? '通用稿件说明' : '这份稿件的具体要求'}</span><textarea name="requirements" placeholder="请输入稿件的具体要求">${e(o.requirements)}</textarea></label>${!isTemplate ? `<label class="field"><span>稿件备注</span><textarea name="notes" placeholder="请输入补充备注" style="min-height:54px">${e(o.notes)}</textarea></label>` : ''}<div class="dropzone" data-drop="draft" data-action="upload-draft">${icon('upload')}拖入设定图片 / 点击上传 <span class="small">· 可留空</span></div><div class="upload-previews">${o.images.map((img, i) => `<div class="upload-preview"><img src="${e(img)}" alt="参考图${i + 1}"><button type="button" data-action="remove-draft-image" data-index="${i}" aria-label="移除参考图${i + 1}">×</button></div>`).join('')}</div></div></form>`,
@@ -761,11 +844,12 @@ import { storage } from './storage.js';
     ].forEach((k) => {
       if (fd.has(k)) draft[k] = String(fd.get(k)).trim();
     });
-    ['deposit', 'balance', 'fee', 'duration'].forEach((k) => {
+    ['deposit', 'balance', 'fee'].forEach((k) => {
       if (fd.has(k)) draft[k] = Number(fd.get(k));
     });
     draft.paid = fd.get('paid') === 'on';
     draft.stages = ['未开始', ...fd.getAll('optional-stage'), '成图', '完成'];
+    if (modal?.type === 'template-editor') delete draft.duration;
     if (!draft.stages.includes(draft.status) && draft.status !== '退单') draft.status = '未开始';
     draft.extras = $$('.service-row', f).map((row) => ({
       name: $('.service-name', row).value.trim(),
@@ -796,6 +880,15 @@ import { storage } from './storage.js';
     showModal(
       `${modal.id ? '编辑' : '新建'}单主`,
       `<form id="client-form"><label class="field"><span>单主名称 *</span><input name="name" maxlength="60" required value="${e(c.name)}" placeholder="请输入单主名称"></label><div class="field"><span>所在平台（可多选）*</span><div class="check-options">${data.platforms.map((p) => `<label class="check-row"><input type="checkbox" name="platforms" value="${p.id}" ${c.platforms.includes(p.id) ? 'checked' : ''}><i class="dot" style="--platform:${p.color}"></i>${e(p.name)}</label>`).join('')}</div>${btn(icon('plus') + '新建平台', 'inline-platform', 'small')}</div><div id="inline-platform-form" class="hidden"><div class="form-grid"><label class="field"><span>平台名称</span><input id="new-platform-name"></label><label class="field"><span>标识灰度</span><input id="new-platform-color" type="color" value="#cccccc"></label></div><input id="new-platform-fee" type="hidden" value="0">${btn('添加并选择', 'save-inline-platform', 'small green')}</div><div class="form-grid" style="margin-top:17px">${[
+        ['cn', 'CN（选填）'],
+        ['salutation', '称呼（选填）'],
+        ['platformLink', '平台链接（选填）'],
+      ]
+        .map(
+          ([key, label]) =>
+            `<label class="field"><span>${label}</span><input name="${key}" ${key === 'platformLink' ? 'type="url" placeholder="https://"' : ''} maxlength="2000" value="${e(c[key] || '')}"></label>`,
+        )
+        .join('')}${[
         ['preferences', '偏好', '喜欢的配色、画风、构图…'],
         ['dislikes', '雷点', '不希望出现的内容…'],
         ['requirements', '要求', '每次委托都需要记住的要求…'],
@@ -825,25 +918,49 @@ import { storage } from './storage.js';
       'wide',
     );
   }
+  function clientHistoryHTML(id, query = '') {
+    const needle = query.trim().toLowerCase();
+    const orders = data.orders
+      .filter((o) => o.client === id)
+      .filter((o) =>
+        [o.title, o.category, o.status, o.due, platform(o.platform).name]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle),
+      )
+      .sort((a, b) => b.due.localeCompare(a.due));
+    return (
+      `<p class="hint">找到 ${orders.length} 份稿件</p>` +
+      orders
+        .map(
+          (o) =>
+            `<button class="detail-link" data-action="order-detail" data-id="${o.id}" style="--platform:${platform(o.platform).color}"><span>${e(o.title)}<br><small class="muted">${shortDate(o.due)} · ${e(o.category)} · ${e(platform(o.platform).name)}</small></span><span class="badge">${e(o.status)}</span></button>`,
+        )
+        .join('') +
+      (orders.length ? '' : '<p class="hint">没有符合条件的历史稿件。</p>')
+    );
+  }
   function showClientDetail(id) {
     const c =
-      data.clients.find((c) => c.id === id) ||
-      (data.archivedClients || []).find((c) => c.id === id);
+      data.clients.find((c) => c.id === id) || data.archivedClients.find((c) => c.id === id);
     if (!c) return;
-    const orders = data.orders.filter((o) => o.client === id);
+    const orders = data.orders.filter((o) => o.client === id),
+      count = orders.filter((o) => o.status !== '退单').length;
     modal = { type: 'client-detail', id };
     showModal(
       e(c.name) + '的档案',
       `<div class="color-strip" style="height:7px;border-radius:5px;background:${clientGradient(c)};margin-bottom:20px"></div><div class="row" style="margin-bottom:20px">${c.platforms.map((id) => `<span class="platform-tag" style="--platform:${platform(id).color}"><i class="dot"></i>${e(platform(id).name)}</span>`).join('')}</div><dl class="detail-kv">${[
+        ['cn', 'CN'],
+        ['salutation', '称呼'],
         ['preferences', '偏好'],
         ['dislikes', '雷点'],
         ['requirements', '要求'],
         ['notes', '备注'],
       ]
-        .map(([key, label]) => `<dt>${label}</dt><dd>${e(c[key] || '还没有记录')}</dd>`)
+        .map(([key, label]) => `<dt>${label}</dt><dd>${e(c[key] || '未填写')}</dd>`)
         .join(
           '',
-        )}</dl><div class="divider"></div><h3 style="font-size:12px">关联稿件 · ${orders.length} 份</h3><div class="detail-link-list">${orders.map((o) => `<button class="detail-link" data-action="order-detail" data-id="${o.id}" style="--platform:${platform(o.platform).color}"><span>${e(o.title)}<br><small class="muted">${shortDate(o.due)} · ${e(platform(o.platform).name)}</small></span><span class="badge">${e(o.status)}</span></button>`).join('') || '<p class="hint">暂无关联稿件。</p>'}</div>`,
+        )}<dt>平台链接</dt><dd>${c.platformLink ? `<a href="${e(c.platformLink)}" target="_blank" rel="noopener noreferrer">${e(c.platformLink)}</a>` : '未填写'}</dd><dt>合作次数</dt><dd>${count} 次（不含退单） · 已完成 ${orders.filter((o) => o.status === '完成').length} 次</dd></dl><div class="divider"></div><h3 style="font-size:12px">历史稿件 · ${orders.length} 份</h3><label class="searchbox" style="margin:14px 0">${icon('search')}<input id="client-history-search" placeholder="搜索稿件名称、类别、平台、状态或日期" aria-label="搜索历史稿件"></label><div id="client-history-list" class="detail-link-list">${clientHistoryHTML(id)}</div>`,
       btn('新建关联稿件', 'client-new-order', 'green left', `data-id="${id}"`) +
         btn('删除单主', 'delete-client', 'danger', `data-id="${id}"`) +
         btn('编辑档案', 'edit-client', 'primary', `data-id="${id}"`),
@@ -870,19 +987,38 @@ import { storage } from './storage.js';
     );
   }
   async function showLanSettings() {
-    if (!storage.localAccess) { toast('请在电脑本机管理手机连接。'); return; }
+    if (!storage.localAccess) {
+      toast('请在电脑本机管理手机连接。');
+      return;
+    }
     const status = await storage.lanStatus();
     modal = { type: 'lan-settings' };
-    showModal('手机联动', `<p class="settings-note">手机与电脑连接同一局域网，所有稿件和图片保存到电脑。仅在可信网络中使用；连接使用 HTTP。</p><form id="lan-form"><label class="check-row"><input name="lan-enabled" type="checkbox" ${status.enabled ? 'checked' : ''}>启用局域网手机访问</label><label class="field"><span>电脑网卡地址</span><select name="lan-address">${status.interfaces.map((item) => `<option value="${e(item.address)}" ${item.address === status.address ? 'selected' : ''}>${e(item.name)} · ${e(item.address)}</option>`).join('')}</select></label><label class="field"><span>允许的手机 IPv4 地址（多个用逗号分隔）</span><input name="lan-phones" value="${e(status.trustedAddresses.join(', '))}" placeholder="例如 192.168.1.168"></label><button type="submit" class="btn primary">保存连接设置</button></form><div class="divider"></div><p class="settings-note">${status.active ? `手机浏览器打开：<strong>${e(status.mobileUrl)}</strong>` : '局域网入口未开启。'}${status.error ? `<br>${e(status.error)}` : ''}<br>Windows 防火墙须只允许上述手机 IP、当前端口和“专用网络”。公用网络下规则不会生效。</p><button class="btn" data-action="lan-code" ${status.active ? '' : 'disabled'}>生成两分钟配对码</button><p id="lan-pairing-code" role="status"></p><div class="divider"></div><h3>已配对设备</h3>${status.devices.map((device) => `<div class="row between"><span>${e(device.name)} · ${e(device.address)}</span>${btn('撤销授权', 'lan-revoke', 'small', `data-id="${e(device.id)}"`)}</div>`).join('') || '<p class="settings-note">暂无配对设备。</p>'}`, btn('关闭', 'close-modal'), 'narrow');
+    showModal(
+      '手机联动',
+      `<p class="settings-note">手机与电脑连接同一局域网，所有稿件和图片保存到电脑。仅在可信网络中使用；连接使用 HTTP。</p><form id="lan-form"><label class="check-row"><input name="lan-enabled" type="checkbox" ${status.enabled ? 'checked' : ''}>启用局域网手机访问</label><label class="field"><span>电脑网卡地址</span><select name="lan-address">${status.interfaces.map((item) => `<option value="${e(item.address)}" ${item.address === status.address ? 'selected' : ''}>${e(item.name)} · ${e(item.address)}</option>`).join('')}</select></label><label class="field"><span>允许的手机 IPv4 地址（多个用逗号分隔）</span><input name="lan-phones" value="${e(status.trustedAddresses.join(', '))}" placeholder="例如 192.168.1.168"></label><button type="submit" class="btn primary">保存连接设置</button></form><div class="divider"></div><p class="settings-note">${status.active ? `手机浏览器打开：<strong>${e(status.mobileUrl)}</strong>` : '局域网入口未开启。'}${status.error ? `<br>${e(status.error)}` : ''}<br>Windows 防火墙须只允许上述手机 IP、当前端口和“专用网络”。公用网络下规则不会生效。</p><button class="btn" data-action="lan-code" ${status.active ? '' : 'disabled'}>生成两分钟配对码</button><p id="lan-pairing-code" role="status"></p><div class="divider"></div><h3>已配对设备</h3>${status.devices.map((device) => `<div class="row between"><span>${e(device.name)} · ${e(device.address)}</span>${btn('撤销授权', 'lan-revoke', 'small', `data-id="${e(device.id)}"`)}</div>`).join('') || '<p class="settings-note">暂无配对设备。</p>'}`,
+      btn('关闭', 'close-modal'),
+      'narrow',
+    );
   }
   async function saveLanForm(form) {
-    const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
+    const submit = form.querySelector('button[type=submit]');
+    submit.disabled = true;
     try {
       const fd = new FormData(form);
-      await storage.configureLan({ enabled: fd.has('lan-enabled'), address: fd.get('lan-address'), trustedAddresses: String(fd.get('lan-phones') || '').split(/[，,\s]+/).filter(Boolean) });
-      await showLanSettings(); toast('手机连接设置已保存。');
-    } catch (error) { toast(error.message); }
-    finally { if (submit.isConnected) submit.disabled = false; }
+      await storage.configureLan({
+        enabled: fd.has('lan-enabled'),
+        address: fd.get('lan-address'),
+        trustedAddresses: String(fd.get('lan-phones') || '')
+          .split(/[，,\s]+/)
+          .filter(Boolean),
+      });
+      await showLanSettings();
+      toast('手机连接设置已保存。');
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      if (submit.isConnected) submit.disabled = false;
+    }
   }
   async function importBrowserRecords() {
     const candidate = await storage.legacy();
@@ -914,8 +1050,7 @@ import { storage } from './storage.js';
       created: draft.created,
     };
     Object.assign(draft, clone(t), keep, { status: '未开始', paid: false });
-    if (!draft.due)
-      draft.due = dateStr(addDays(parseDate(draft.start || today()), t.duration || 7));
+    delete draft.duration;
   }
   function cancelClient() {
     const prev = modal.previous;
@@ -993,13 +1128,57 @@ import { storage } from './storage.js';
         break;
       }
       case 'lan-settings':
-        await showLanSettings(); break;
+        await showLanSettings();
+        break;
       case 'lan-code': {
         const result = await storage.pairingCode();
-        $('#lan-pairing-code').textContent = result.code + '（两分钟内有效，使用一次失效）'; break;
+        $('#lan-pairing-code').textContent = result.code + '（两分钟内有效，使用一次失效）';
+        break;
       }
       case 'lan-revoke':
-        await storage.revokeDevice(id); await showLanSettings(); toast('设备授权已撤销。'); break;
+        await storage.revokeDevice(id);
+        await showLanSettings();
+        toast('设备授权已撤销。');
+        break;
+      case 'add-custom-stage': {
+        captureDraft();
+        const name = $('#custom-stage-name').value.trim();
+        if (!name || name.length > 40 || [...draft.stages, '退单'].includes(name)) {
+          toast('请输入不重复的流程名称');
+          return;
+        }
+        if (draft.stages.length >= 30) {
+          toast('流程最多 30 个节点');
+          return;
+        }
+        draft.stages.splice(-2, 0, name);
+        renderOrderEditor();
+        break;
+      }
+      case 'new-tool-template':
+        toolConfig = {
+          kind: tool,
+          name: '',
+          brand: '',
+          handle: '',
+          message: '',
+          subtitle: '',
+          accent: '#ffffff',
+          image: '',
+          customer: '',
+          membership: '',
+          cardNumber: '',
+          order: '',
+          design: createDesign(tool),
+        };
+        render();
+        break;
+      case 'new-layout-template':
+        layout = createDesign('layout');
+        layoutTemplateId = '';
+        layoutTemplateName = '';
+        render();
+        break;
       case 'settings':
         showSettings();
         break;
@@ -1326,7 +1505,7 @@ import { storage } from './storage.js';
         break;
       case 'upload-tool-image':
         pickFiles(async (files) => {
-          toolConfig.image = (await readImages(files))[0]?.src || '';
+          await addDesignImages(ensureToolDesign(), await readImages(files));
           render();
         });
         break;
@@ -1337,9 +1516,9 @@ import { storage } from './storage.js';
       case 'use-asset': {
         const a = data.assets.find((a) => a.id === id);
         if (el.dataset.mode === 'watermark') await setWatermark('mark', a.src);
-        else if (el.dataset.mode === 'layout') addLayoutItems([a]);
+        else if (el.dataset.mode === 'layout') await addLayoutItems([a]);
         else {
-          toolConfig.image = a.src;
+          await addDesignImages(ensureToolDesign(), [a]);
           render();
         }
         break;
@@ -1353,7 +1532,7 @@ import { storage } from './storage.js';
         const t = clone(toolConfig);
         t.id = action === 'update-tool-template' && t.id ? t.id : uid();
         delete t.order;
-        delete t.customer;
+        if (toolConfig.order) delete t.customer;
         const idx = data.toolTemplates.findIndex((x) => x.id === t.id);
         if (idx < 0) data.toolTemplates.push(t);
         else data.toolTemplates[idx] = t;
@@ -1365,8 +1544,12 @@ import { storage } from './storage.js';
       }
       case 'load-tool-template': {
         const t = data.toolTemplates.find((t) => t.id === id);
-        const keep = { order: toolConfig.order, customer: toolConfig.customer };
+        const keep = {
+          order: toolConfig.order,
+          ...(toolConfig.order ? { customer: toolConfig.customer } : {}),
+        };
         toolConfig = { ...clone(t), ...keep };
+        ensureToolDesign();
         render();
         break;
       }
@@ -1375,6 +1558,10 @@ import { storage } from './storage.js';
         confirmAction('删除这个创作模板？', '删除模板不会影响已有稿件或素材。', async () => {
           data.toolTemplates = data.toolTemplates.filter((t) => t.id !== tid);
           if (toolConfig?.id === tid) delete toolConfig.id;
+          if (layoutTemplateId === tid) {
+            layoutTemplateId = '';
+            layoutTemplateName = '';
+          }
           if (!(await persist())) return;
           closeModal();
           render();
@@ -1408,26 +1595,32 @@ import { storage } from './storage.js';
           render();
         }
         break;
-      case 'save-layout-template': {
+      case 'save-layout-template':
+      case 'update-layout-template': {
         const name = $('#layout-template-name').value.trim();
         if (!name) {
           toast('请输入排版模板名称');
           return;
         }
-        if (!layout.items.length) {
-          toast('请先添加图片');
-          return;
-        }
-        data.toolTemplates.push({ id: uid(), kind: 'layout', name, layout: clone(layout) });
+        const templateId =
+          action === 'update-layout-template' && layoutTemplateId ? layoutTemplateId : uid();
+        const template = { id: templateId, kind: 'layout', name, layout: clone(layout) };
+        const existing = data.toolTemplates.findIndex((t) => t.id === templateId);
+        if (existing < 0) data.toolTemplates.push(template);
+        else data.toolTemplates[existing] = template;
         if (!(await persist())) return;
+        layoutTemplateId = templateId;
+        layoutTemplateName = name;
         render();
         toast('排版模板已保存');
         break;
       }
       case 'load-layout-template': {
         const t = data.toolTemplates.find((t) => t.id === id);
-        layout = clone(t.layout);
+        layout = prepareDesign(t.layout);
         layout.selected = -1;
+        layoutTemplateId = t.id;
+        layoutTemplateName = t.name;
         render();
         break;
       }
@@ -1510,18 +1703,32 @@ import { storage } from './storage.js';
     const el = event.target.closest('[data-action]');
     if (!el) return;
     event.preventDefault();
-    if (pendingSaves && el.dataset.action !== 'backup-export') { toast('正在等待电脑保存，请稍后再操作。'); return; }
+    if (pendingSaves && el.dataset.action !== 'backup-export') {
+      toast('正在等待电脑保存，请稍后再操作。');
+      return;
+    }
     interactionBusy++;
-    handleAction(el.dataset.action, el).catch((err) => {
-      console.error(err);
-      toast('操作没有完成：' + err.message);
-    }).finally(() => { interactionBusy--; });
+    handleAction(el.dataset.action, el)
+      .catch((err) => {
+        console.error(err);
+        toast('操作没有完成：' + err.message);
+      })
+      .finally(() => {
+        interactionBusy--;
+      });
   });
   function captureClientDraft() {
     const fd = new FormData($('#client-form'));
-    ['name', 'preferences', 'dislikes', 'requirements', 'notes'].forEach(
-      (k) => (draft[k] = String(fd.get(k) || '').trim()),
-    );
+    [
+      'name',
+      'cn',
+      'salutation',
+      'platformLink',
+      'preferences',
+      'dislikes',
+      'requirements',
+      'notes',
+    ].forEach((k) => (draft[k] = String(fd.get(k) || '').trim()));
     draft.platforms = fd.getAll('platforms');
   }
   async function saveSubmittedForm(form) {
@@ -1534,7 +1741,10 @@ import { storage } from './storage.js';
   document.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.target;
-    if (form.id === 'lan-form') { await saveLanForm(form); return; }
+    if (form.id === 'lan-form') {
+      await saveLanForm(form);
+      return;
+    }
     if (form.id === 'order-form') {
       if (!form.reportValidity()) return;
       captureDraft();
@@ -1574,6 +1784,10 @@ import { storage } from './storage.js';
       }
       if (!draft.platforms.length) {
         toast('请至少选择一个平台');
+        return;
+      }
+      if (draft.platformLink && !/^https?:\/\/[^\s]+$/i.test(draft.platformLink)) {
+        toast('平台链接请使用 http:// 或 https:// 地址');
         return;
       }
       const prev = modal.previous,
@@ -1654,7 +1868,7 @@ import { storage } from './storage.js';
       const sel = $('[name=status]');
       if (sel)
         sel.innerHTML = allStages(draft)
-          .map((s) => `<option ${s === draft.status ? 'selected' : ''}>${s}</option>`)
+          .map((s) => `<option ${s === draft.status ? 'selected' : ''}>${e(s)}</option>`)
           .join('');
     }
     if (el.id === 'tool-order') {
@@ -1681,6 +1895,9 @@ import { storage } from './storage.js';
   let searchTimer;
   document.addEventListener('input', (event) => {
     const el = event.target;
+    if (el.id === 'client-history-search' && modal?.type === 'client-detail')
+      $('#client-history-list').innerHTML = clientHistoryHTML(modal.id, el.value);
+    if (el.id === 'layout-template-name') layoutTemplateName = el.value;
     if (el.id === 'list-search') {
       clearTimeout(searchTimer);
       search = el.value;
@@ -1704,9 +1921,7 @@ import { storage } from './storage.js';
       $('#net-preview').textContent = money(net(draft));
     }
     if (el.dataset.toolField) {
-      toolConfig[el.dataset.toolField] =
-        el.dataset.toolField === 'accent' ? grayColor(el.value) : el.value;
-      if (el.dataset.toolField === 'accent') el.value = toolConfig.accent;
+      toolConfig[el.dataset.toolField] = el.value;
       drawCurrentTool();
     }
     if (el.id === 'wm-opacity' || el.id === 'wm-size') {
@@ -1785,8 +2000,14 @@ import { storage } from './storage.js';
     input.accept = accept;
     input.onchange = () => {
       if (input.files.length) {
-        const files = [...input.files]; interactionBusy++;
-        Promise.resolve().then(() => callback(files)).catch((err) => toast(err.message)).finally(() => { interactionBusy--; });
+        const files = [...input.files];
+        interactionBusy++;
+        Promise.resolve()
+          .then(() => callback(files))
+          .catch((err) => toast(err.message))
+          .finally(() => {
+            interactionBusy--;
+          });
       }
     };
     input.click();
@@ -1869,10 +2090,13 @@ import { storage } from './storage.js';
       } else if (kind === 'assets') await uploadAssets(files);
       else if (kind === 'layout') await addLayoutItems(await readImages(files));
       else if (kind === 'tool-image') {
-        toolConfig.image = (await readImages(files))[0]?.src || '';
+        await addDesignImages(ensureToolDesign(), await readImages(files));
         render();
       } else if (kind === 'watermark-mark' || kind === 'watermark-image')
-        await setWatermark(kind.endsWith('mark') ? 'mark' : 'image', (await readImages(files))[0]?.src);
+        await setWatermark(
+          kind.endsWith('mark') ? 'mark' : 'image',
+          (await readImages(files))[0]?.src,
+        );
       else {
         const o = data.orders.find((o) => o.id === data.current);
         if (o) {
@@ -1885,7 +2109,9 @@ import { storage } from './storage.js';
       }
     } catch (err) {
       toast(err.message);
-    } finally { interactionBusy--; }
+    } finally {
+      interactionBusy--;
+    }
   });
   const imageCache = new Map();
   function loadImage(src) {
@@ -2002,24 +2228,37 @@ import { storage } from './storage.js';
     if (!canvas) return;
     const version = ++drawVersion;
     try {
-      let imgs = [];
-      if (tool === 'watermark')
-        imgs = await Promise.all([
-          watermark.image ? loadImage(watermark.image) : null,
-          watermark.mark ? loadImage(watermark.mark) : null,
-        ]);
-      else if (tool === 'layout')
-        imgs = await Promise.all(layout.items.map((s) => loadImage(s.src)));
-      else if (toolConfig?.image) imgs = [await loadImage(toolConfig.image)];
-      if (version !== drawVersion || !canvas.isConnected) return;
-      const ctx = canvas.getContext('2d');
-      if (tool === 'watermark') drawWatermark(canvas, ctx, imgs);
-      if (tool === 'receipt') drawReceipt(canvas, ctx, imgs[0]);
-      if (tool === 'card') drawCard(canvas, ctx, imgs[0]);
-      if (tool === 'layout') {
-        drawLayout(canvas, ctx, imgs, clean);
-        bindLayoutPointer(canvas);
+      if (tool !== 'watermark') {
+        const state = tool === 'layout' ? layout : ensureToolDesign();
+        const resolve = tool === 'layout' ? () => '' : componentValue;
+        const bindings = {
+          kind: tool,
+          redraw: () => drawCurrentTool(),
+          render,
+          notify: toast,
+          upload: (callback, multiple) =>
+            pickFiles(async (files) => callback(await readImages(files)), multiple),
+        };
+        // Bind controls before image decoding yields. A fast first selection
+        // must update the template state, not just the visible input value.
+        bindDesigner(canvas, state, resolve, undefined, bindings);
+        const bounds = await drawDesign(
+          canvas,
+          state,
+          resolve,
+          clean,
+          () => version === drawVersion,
+        );
+        if (version !== drawVersion || !canvas.isConnected || !bounds) return;
+        bindDesigner(canvas, state, resolve, bounds, bindings);
+        return;
       }
+      const imgs = await Promise.all([
+        watermark.image ? loadImage(watermark.image) : null,
+        watermark.mark ? loadImage(watermark.mark) : null,
+      ]);
+      if (version !== drawVersion || !canvas.isConnected) return;
+      drawWatermark(canvas, canvas.getContext('2d'), imgs);
     } catch (err) {
       toast(err.message);
     }
@@ -2057,276 +2296,16 @@ import { storage } from './storage.js';
     }
     ctx.globalAlpha = 1;
   }
-  function drawReceipt(canvas, ctx, img) {
-    const c = toolConfig,
-      o = data.orders.find((o) => o.id === c.order),
-      w = 680;
-    const messageLines = Math.max(
-      1,
-      Math.ceil(c.message.length / 25) + c.message.split(String.fromCharCode(10)).length - 1,
-    );
-    const height =
-      1030 + (img ? 320 : 0) + Math.max(0, messageLines - 2) * 32 + (o?.extras.length || 0) * 42;
-    canvas.width = w;
-    canvas.height = height;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, height);
-    rounded(ctx, 31, 30, w - 62, 185, 0, grayColor(c.accent || '#efefef'));
-    text(ctx, c.brand, w / 2, 108, 33, '#222222', 'center');
-    text(ctx, c.subtitle || '稿件交付凭证', w / 2, 160, 17, '#777777', 'center');
-    text(ctx, '单主', w / 2, 268, 14, '#999999', 'center');
-    text(ctx, c.customer || '未填写', w / 2, 316, 32, '#222222', 'center');
-    text(
-      ctx,
-      '交付日期 ' + (o ? shortDate(o.due) : shortDate(today())),
-      w / 2,
-      357,
-      14,
-      '#999999',
-      'center',
-    );
-    dashed(ctx, 398, w, 49);
-    let y = 442;
-    text(ctx, '稿件项目', 51, y, 17, '#888888');
-    text(ctx, '金额', w - 51, y, 15, '#888888', 'right');
-    y += 49;
-    y = wrapped(ctx, o?.title || c.itemText || '稿件委托', 51, y, 440, 31, 22, '#333333');
-    text(ctx, o ? money(o.deposit + o.balance) : '—', w - 51, y - 31, 22, '#333333', 'right');
-    if (o)
-      for (const extra of o.extras) {
-        y += 10;
-        text(ctx, '+ ' + extra.name, 51, y, 17, '#888888');
-        text(ctx, money(extra.amount), w - 51, y, 19, '#666666', 'right');
-        y += 29;
-      }
-    y += 24;
-    dashed(ctx, y, w, 49);
-    y += 48;
-    text(ctx, '合计', 51, y, 18, '#555555');
-    text(ctx, o ? money(gross(o)) : '—', w - 51, y, 31, '#222222', 'right');
-    y += 43;
-    if (o) {
-      text(
-        ctx,
-        platform(o.platform).name + ' · ' + (o.paid ? '已结清' : '已收定金 ' + money(o.deposit)),
-        51,
-        y,
-        14,
-        '#999999',
-      );
-      y += 25;
-    }
-    if (img) {
-      y += 19;
-      drawCover(ctx, img, 51, y, w - 102, 285);
-      y += 315;
-    }
-    y += 25;
-    wrapped(ctx, c.message, 51, y, w - 102, 32, 19, '#777777');
-    const bottom = height - 126;
-    dashed(ctx, bottom - 34, w, 49);
-    wrapped(
-      ctx,
-      c.handle || '联系方式：未填写',
-      w / 2,
-      bottom + 1,
-      w - 100,
-      25,
-      15,
-      '#888888',
-      'center',
-    );
-    let x = w / 2 - 115;
-    ctx.fillStyle = '#333333';
-    Array.from({ length: 54 }, (_, i) => ((i * 11 + 7) % 4) + 1).forEach((bar, i) => {
-      if (i % 2 === 0) ctx.fillRect(x, bottom + 32, bar, 30);
-      x += bar + 1;
-    });
-    text(ctx, '稿件交付记录', w / 2, height - 25, 12, '#999999', 'center');
-  }
-  function drawCard(canvas, ctx, img) {
-    const c = toolConfig,
-      w = 1080,
-      h = 650,
-      bg = grayColor(c.accent || '#202020');
-    const dark = parseInt(bg.slice(1, 3), 16) < 140,
-      fg = dark ? '#ffffff' : '#222222',
-      muted = dark ? '#aaaaaa' : '#777777';
-    canvas.width = w;
-    canvas.height = h;
-    rounded(ctx, 0, 0, w, h, 20, bg);
-    ctx.strokeStyle = dark ? '#ffffff30' : '#00000020';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(32, 32, w - 64, h - 64);
-    text(ctx, '会员卡', 64, 90, 17, muted);
-    text(ctx, c.brand, 64, 166, 40, fg);
-    text(ctx, c.subtitle || '会员资料', 64, 207, 15, muted);
-    ctx.fillStyle = dark ? '#ffffff15' : '#00000008';
-    ctx.fillRect(64, 263, 128, 36);
-    text(ctx, c.membership || '未填写', 128, 288, 16, muted, 'center');
-    text(ctx, c.customer || '未填写', 64, 363, 52, fg);
-    text(ctx, '卡号 ' + (c.cardNumber || '未填写'), 67, 411, 18, muted);
-    wrapped(ctx, c.message, 64, 477, 620, 29, 18, muted);
-    if (img) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(758, 236, 250, 283);
-      ctx.clip();
-      drawCover(ctx, img, 758, 236, 250, 283);
-      ctx.restore();
-    } else {
-      ctx.strokeStyle = dark ? '#ffffff25' : '#00000018';
-      for (let i = 0; i < 4; i++) ctx.strokeRect(802 + i * 17, 265 + i * 17, 130, 155);
-    }
-    ctx.beginPath();
-    ctx.moveTo(64, 551);
-    ctx.lineTo(w - 64, 551);
-    ctx.strokeStyle = dark ? '#ffffff25' : '#00000020';
-    ctx.stroke();
-    text(ctx, c.handle.replace(/\n/g, ' · ') || '联系方式：未填写', 64, 596, 16, muted);
-    text(ctx, '会员信息', w - 64, 596, 14, muted, 'right');
-  }
   async function addLayoutItems(assets) {
-    for (const a of assets) {
-      const img = await loadImage(a.src);
-      layout.items.push({
-        src: a.src,
-        name: a.name || '图片素材',
-        x: layout.width / 2 + (layout.items.length % 3) * 18,
-        y: layout.height / 2 + (layout.items.length % 3) * 18,
-        scale: Math.max(
-          5,
-          Math.min(80, Math.round(((layout.width * 0.6) / img.naturalWidth) * 100)),
-        ),
-        rotation: 0,
-      });
-    }
-    layout.selected = layout.items.length - 1;
+    await addDesignImages(layout, assets);
     render();
-    toast('素材已放入画布，拖动它调整位置');
-  }
-  function drawLayout(canvas, ctx, imgs, clean = false) {
-    canvas.width = layout.width;
-    canvas.height = layout.height;
-    ctx.fillStyle = layout.bg;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (!imgs.length) {
-      text(
-        ctx,
-        '请上传或拖入图片',
-        canvas.width / 2,
-        canvas.height / 2,
-        Math.min(32, canvas.width * 0.035),
-        '#b4b4b4',
-        'center',
-      );
-      return;
-    }
-    layout.items.forEach((item, i) => {
-      const img = imgs[i],
-        w = (img.naturalWidth * item.scale) / 100,
-        h = (img.naturalHeight * item.scale) / 100;
-      ctx.save();
-      ctx.translate(item.x, item.y);
-      ctx.rotate((item.rotation * Math.PI) / 180);
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      if (i === layout.selected && !clean) {
-        ctx.strokeStyle = '#878787';
-        ctx.lineWidth = Math.max(2, canvas.width / 500);
-        ctx.setLineDash([7, 5]);
-        ctx.strokeRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8);
-        ctx.setLineDash([]);
-        ctx.fillStyle = '#8b8b8b';
-        for (const [x, y] of [
-          [-w / 2, -h / 2],
-          [w / 2, -h / 2],
-          [w / 2, h / 2],
-          [-w / 2, h / 2],
-        ])
-          ctx.fillRect(x - 4, y - 4, 8, 8);
-      }
-      ctx.restore();
-    });
-  }
-  let dragState = null;
-  function bindLayoutPointer(canvas) {
-    const point = (event) => {
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: ((event.clientX - rect.left) * canvas.width) / rect.width,
-        y: ((event.clientY - rect.top) * canvas.height) / rect.height,
-      };
-    };
-    canvas.onpointerdown = async (event) => {
-      const p = point(event);
-      let found = -1;
-      for (let i = layout.items.length - 1; i >= 0; i--) {
-        const it = layout.items[i],
-          img = await loadImage(it.src),
-          angle = (-it.rotation * Math.PI) / 180,
-          dx = p.x - it.x,
-          dy = p.y - it.y;
-        const x = dx * Math.cos(angle) - dy * Math.sin(angle),
-          y = dx * Math.sin(angle) + dy * Math.cos(angle);
-        if (
-          Math.abs(x) <= (img.naturalWidth * it.scale) / 200 &&
-          Math.abs(y) <= (img.naturalHeight * it.scale) / 200
-        ) {
-          found = i;
-          break;
-        }
-      }
-      layout.selected = found;
-      if (found >= 0) {
-        dragState = {
-          x: p.x,
-          y: p.y,
-          startX: layout.items[found].x,
-          startY: layout.items[found].y,
-        };
-        try {
-          canvas.setPointerCapture(event.pointerId);
-        } catch {}
-        canvas.style.cursor = 'grabbing';
-      } else dragState = null;
-      await drawCurrentTool();
-      syncLayoutControls();
-      canvas.focus();
-    };
-    canvas.onpointermove = (event) => {
-      if (!dragState || layout.selected < 0) return;
-      const p = point(event),
-        it = layout.items[layout.selected];
-      it.x = dragState.startX + p.x - dragState.x;
-      it.y = dragState.startY + p.y - dragState.y;
-      drawCurrentTool();
-    };
-    canvas.onpointerup = canvas.onpointercancel = () => {
-      dragState = null;
-      canvas.style.cursor = 'grab';
-    };
-    canvas.style.cursor = dragState ? 'grabbing' : 'grab';
-  }
-  function syncLayoutControls() {
-    const item = layout.items[layout.selected];
-    const scale = $('#layout-scale'),
-      rotation = $('#layout-rotation');
-    if (!scale) return;
-    scale.disabled = !item;
-    rotation.disabled = !item;
-    if (item) {
-      scale.value = item.scale;
-      rotation.value = item.rotation;
-      $('#layout-scale-value').textContent = item.scale + '%';
-      $('#layout-rotation-value').textContent = item.rotation + '°';
-    }
-    $$('[data-action^="layout-"]').forEach((b) => (b.disabled = !item));
+    toast('素材已放入画布，可拖动调整位置');
   }
   async function getOutputCanvas() {
     if (tool === 'watermark' && (!watermark.image || !watermark.mark)) {
       throw new Error('请先放入原图和水印。');
     }
-    if (tool === 'layout' && !layout.items.length) throw new Error('请先添加画布素材。');
+
     await drawCurrentTool(true);
     const canvas = $('#output-canvas');
     if (!canvas) throw new Error('请先打开一个创作组件。');
@@ -2350,7 +2329,7 @@ import { storage } from './storage.js';
           : err.message,
       );
     } finally {
-      if (tool === 'layout') drawCurrentTool();
+      if (tool !== 'watermark') drawCurrentTool();
     }
   }
   function download(blob, name) {
@@ -2384,7 +2363,7 @@ import { storage } from './storage.js';
     }
     if (!blob) throw new Error('生成图片失败，请重试');
     download(blob, `${toolNames[tool]}-${today()}.${format}`);
-    if (tool === 'layout') drawCurrentTool();
+    if (tool !== 'watermark') drawCurrentTool();
     toast(`${format.toUpperCase()} 已生成`);
   }
   function canvasPDF(canvas) {

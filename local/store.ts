@@ -28,8 +28,11 @@ function desktopImages(data: DesktopData, map: (src: string) => string) {
   for (const asset of data.assets) asset.src = map(asset.src);
   for (const template of data.toolTemplates) {
     if (template.image) template.image = map(template.image);
-    if (template.kind === 'layout')
-      for (const item of template.layout.items) item.src = map(item.src);
+    for (const design of [template.kind === 'layout' ? template.layout : null, template.design]) {
+      if (!design) continue;
+      if (design.backgroundImage) design.backgroundImage = map(design.backgroundImage);
+      for (const item of design.items) if (item.kind !== 'text') item.src = map(item.src);
+    }
   }
   if (data.watermarkMark) data.watermarkMark = map(data.watermarkMark);
 }

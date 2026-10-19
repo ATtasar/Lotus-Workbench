@@ -245,13 +245,37 @@ async function stop() {
 }
 async function shortcut() {
   if (process.platform !== 'win32') throw new Error('桌面快捷方式只支持 Windows 10/11。');
-  const script = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=New-Object Text.UTF8Encoding($false); $d=if($env:LOTUS_DESKTOP_DIR){$env:LOTUS_DESKTOP_DIR}else{[Environment]::GetFolderPath('Desktop')}; if(-not(Test-Path -LiteralPath $d)){throw 'Desktop directory missing'}; $p=Join-Path $d $env:LOTUS_SHORTCUT_NAME; $s=(New-Object -ComObject WScript.Shell).CreateShortcut($p); $s.TargetPath=$env:ComSpec; $s.Arguments='/d /c ""'+$env:LOTUS_START_SCRIPT+'" --data-root "'+$env:LOTUS_LOCAL_DATA_ROOT+'"'+$env:LOTUS_SHORTCUT_EXTRA+'"'; $s.WorkingDirectory=$env:LOTUS_SOURCE; $s.Description=$env:LOTUS_SHORTCUT_DESCRIPTION; $s.WindowStyle=7; $s.Save(); Write-Output $p`;
+  const script = `
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false)
+$desktop=if($env:LOTUS_DESKTOP_DIR){$env:LOTUS_DESKTOP_DIR}else{[Environment]::GetFolderPath('Desktop')}
+if(-not(Test-Path -LiteralPath $desktop)){throw 'Desktop directory missing'}
+$destinations=@($desktop)
+if($env:LOTUS_START_MENU_DIR){$menu=$env:LOTUS_START_MENU_DIR}
+elseif(-not $env:LOTUS_DESKTOP_DIR){$menu=[Environment]::GetFolderPath('Programs')}
+else{$menu=$null}
+if($menu){New-Item -ItemType Directory -Path $menu -Force | Out-Null; $destinations+=,$menu}
+$shell=New-Object -ComObject WScript.Shell
+foreach($destination in $destinations){
+  $shortcutPath=Join-Path $destination $env:LOTUS_SHORTCUT_NAME
+  $shortcut=$shell.CreateShortcut($shortcutPath)
+  $shortcut.TargetPath=$env:ComSpec
+  $shortcut.Arguments='/d /c ""'+$env:LOTUS_START_SCRIPT+'" --data-root "'+$env:LOTUS_LOCAL_DATA_ROOT+'"'+$env:LOTUS_SHORTCUT_EXTRA+'"'
+  $shortcut.WorkingDirectory=$env:LOTUS_SOURCE
+  $shortcut.Description=$env:LOTUS_SHORTCUT_DESCRIPTION
+  $shortcut.WindowStyle=7
+  $shortcut.Save()
+  Write-Output $shortcutPath
+}`;
   const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     windowsHide: true,
     encoding: 'utf8',
     env: {
       ...process.env,
       LOTUS_DESKTOP_DIR: value('--desktop-dir') ? path.resolve(value('--desktop-dir')) : '',
+      LOTUS_START_MENU_DIR: value('--start-menu-dir')
+        ? path.resolve(value('--start-menu-dir'))
+        : '',
       LOTUS_SHORTCUT_NAME: '创作者工作台.lnk',
       LOTUS_SHORTCUT_DESCRIPTION: '启动本机创作者工作台',
       LOTUS_START_SCRIPT: path.join(source, 'Start-Local.cmd'),
@@ -261,7 +285,7 @@ async function shortcut() {
     },
   });
   if (r.status !== 0) throw new Error('创建桌面快捷方式失败：' + (r.stderr || r.error?.message));
-  console.log('桌面快捷方式：' + r.stdout.trim());
+  console.log('已创建启动快捷方式：\n' + r.stdout.trim());
 }
 async function storeModule() {
   return import(pathToFileURL(path.join(source, 'local-dist/store.mjs')).href);

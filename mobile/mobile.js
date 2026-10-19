@@ -29,7 +29,7 @@ function mobileRender() {
   $('#app').innerHTML =
     `<div class="mobile-shell shell"><header class="mobile-topbar topbar"><button class="mobile-brand" data-action="nav" data-page="home"><span class="mobile-brand-mark">稿</span><span><strong>${e(data.profile.name)}</strong><small>手机工作空间</small></span></button><div class="mobile-header-actions"><span id="save-status" class="mobile-save"></span>${iconBtn('bell', 'reminders', '截稿提醒')}${iconBtn('settings', 'settings', '工作台设置')}</div></header><main class="content mobile-content" id="main-content">${renderers[page]()}</main><nav class="nav mobile-tabs" aria-label="主要导航">${navItems.map(([id, label, ic]) => `<button type="button" data-action="nav" data-page="${id}" class="${page === id ? 'active' : ''}" aria-label="${label}" ${page === id ? 'aria-current="page"' : ''}><span class="tab-icon">${icon(ic)}</span><span class="tab-label">${shortNames[id]}</span></button>`).join('')}</nav></div>`;
   updateSaveStatus();
-  if (page === 'tools' && tool) requestAnimationFrame(drawCurrentTool);
+  if (page === 'tools' && tool) drawCurrentTool();
 }
 function mobileIntro(_eyebrow, title, desc, action = 'new-order', label = '新建稿件') {
   const counts = {
@@ -113,7 +113,7 @@ function mobileTemplates() {
   return (
     mobileIntro('', '稿件模板', '复用价格、工期与制作流程。', 'new-template', '新建模板') +
     toolbar('templates') +
-    `<div class="mobile-records">${items.map((t) => `<article class="mobile-template-card entity-card template-card" data-action="edit-template" data-id="${t.id}"><div class="color-strip" style="background:${platform(t.platform).color}"></div><input type="checkbox" class="entity-select entity-check" data-id="${t.id}" ${selected.has(t.id) ? 'checked' : ''} aria-label="选择${e(t.title)}"><div class="mobile-template-main"><div class="mobile-template-image"><img src="${e(t.images[0] || artwork())}" alt="模板参考图"></div><div><span class="platform-tag" style="--platform:${platform(t.platform).color}"><i class="dot"></i>${e(platform(t.platform).name)}</span><h3>${e(t.title)}</h3><p>${e(t.category)} · ${t.duration} 天 · ${t.stages.length} 个流程节点</p></div></div><div class="mobile-template-bottom"><strong>${money(gross(t))}<small>平台费 ${t.fee}%</small></strong>${btn('使用模板 ' + icon('arrow'), 'use-template', 'primary small', `data-id="${t.id}"`)}</div></article>`).join('') || mobileEmpty('暂无稿件模板', '保存常用项目，创建稿件时可直接套用。', 'new-template', '新建模板', 'templates')}</div>`
+    `<div class="mobile-records">${items.map((t) => `<article class="mobile-template-card entity-card template-card" data-action="edit-template" data-id="${t.id}"><div class="color-strip" style="background:${platform(t.platform).color}"></div><input type="checkbox" class="entity-select entity-check" data-id="${t.id}" ${selected.has(t.id) ? 'checked' : ''} aria-label="选择${e(t.title)}"><div class="mobile-template-main"><div class="mobile-template-image"><img src="${e(t.images[0] || artwork())}" alt="模板参考图"></div><div><span class="platform-tag" style="--platform:${platform(t.platform).color}"><i class="dot"></i>${e(platform(t.platform).name)}</span><h3>${e(t.title)}</h3><p>${e(t.category)} · ${t.stages.length} 个流程节点</p></div></div><div class="mobile-template-bottom"><strong>${money(gross(t))}<small>平台费 ${t.fee}%</small></strong>${btn('使用模板 ' + icon('arrow'), 'use-template', 'primary small', `data-id="${t.id}"`)}</div></article>`).join('') || mobileEmpty('暂无稿件模板', '保存常用项目，创建稿件时可直接套用。', 'new-template', '新建模板', 'templates')}</div>`
   );
 }
 function mobileCalendar() {
