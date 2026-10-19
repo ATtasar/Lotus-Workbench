@@ -342,6 +342,11 @@ export class LocalStore {
       throw e;
     }
   }
+  desktopRevision(): number {
+    const row = this.db.prepare('SELECT revision FROM desktop_workspace WHERE id=1').get() as any;
+    if (!row) throw new Error('电脑端工作区缺失，禁止用空白数据覆盖。');
+    return Number(row.revision);
+  }
   loadDesktop(): { revision: number; data: DesktopData } {
     const row = this.db
       .prepare('SELECT revision,metadata FROM desktop_workspace WHERE id=1')

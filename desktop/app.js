@@ -1,4 +1,4 @@
-import { initialData, validateBackup } from './model.js';
+import { initialData, validateBackup, mergeBackup } from './model.js';
 import { storage } from './storage.js';
 ('use strict');
 (() => {
@@ -171,6 +171,8 @@ import { storage } from './storage.js';
     saveQueue = Promise.resolve(),
     pendingSaves = 0,
     failedSave = false;
+  let interactionBusy = 0, syncing = false, syncMessage = '', remoteNotice = -1;
+  const disabledDuringSave = new WeakMap();
   let page = ['home', 'calendar', 'orders', 'clients', 'templates', 'tools'].includes(
     location.hash.slice(1),
   )
@@ -243,18 +245,57 @@ import { storage } from './storage.js';
     return saveQueue;
   }
   function updateSaveStatus() {
+    document.querySelectorAll('#order-form input,#order-form select,#order-form textarea,#client-form input,#client-form textarea,#platform-form input,#settings-form input,button[form]').forEach((field) => {
+      if (pendingSaves) {
+        if (!disabledDuringSave.has(field)) disabledDuringSave.set(field, field.disabled);
+        field.disabled = true;
+      } else if (disabledDuringSave.has(field)) {
+        field.disabled = disabledDuringSave.get(field); disabledDuringSave.delete(field);
+      }
+    });
     const el = $('#save-status');
     if (el)
       el.innerHTML = failedSave
         ? '保存失败 · 请导出备份'
         : pendingSaves
           ? '正在保存…'
-          : '<span class="live-dot"></span>已保存到电脑';
+          : syncMessage || '<span class="live-dot"></span>已保存到电脑';
+  }
+  function canRefresh() {
+    return !modal && !tool && !selected.size && !pendingSaves && !failedSave && !interactionBusy && !document.activeElement?.matches('input,textarea,select,[contenteditable=true]');
+  }
+  async function refreshRemote() {
+    if (syncing || !data || document.hidden || failedSave) return;
+    syncing = true;
+    try {
+      const version = await storage.remoteRevision();
+      if (version > storage.version()) {
+        if (!canRefresh()) {
+          syncMessage = '另一端有更新 · 结束编辑后同步';
+          if (remoteNotice !== version) { remoteNotice = version; toast('另一端已更新。当前输入会保留；保存时会检查冲突。'); }
+        } else {
+          const snapshot = await storage.readRemote();
+          if (canRefresh() && snapshot.revision > storage.version()) {
+            data = storage.acceptRemote(snapshot);
+            watermark.mark = data.watermarkMark || null;
+            syncMessage = ''; render();
+          }
+        }
+      } else syncMessage = '';
+      updateSaveStatus();
+    } catch (error) {
+      if (syncMessage !== '电脑连接中断 · 未同步') toast(error.message);
+      syncMessage = '电脑连接中断 · 未同步'; updateSaveStatus();
+    } finally { syncing = false; }
   }
   async function boot() {
     data = await storage.load();
-    if (migrateAppearance()) await persist();
+    if (migrateAppearance() && !(await persist())) throw new Error('数据外观迁移未保存，请先导出备份。');
     render();
+    setInterval(refreshRemote, Math.max(1000, Math.min(30000, window.LOTUS_CONFIG?.pollIntervalMs || 3000)));
+    window.addEventListener('focus', refreshRemote);
+    document.addEventListener('visibilitychange', refreshRemote);
+    if (storage.localAccess && new URLSearchParams(location.search).get('connect') === 'phone') await showLanSettings();
   }
   const navItems = [
     ['home', '主页', 'home'],
@@ -626,6 +667,9 @@ import { storage } from './storage.js';
     document.body.style.overflow = 'hidden';
     $('#app').inert = true;
     requestAnimationFrame(() => {
+      // Do not steal focus if the user already entered another field before
+      // the next animation frame (also applies to the retained mobile forms).
+      if ($('#modal-root').contains(document.activeElement)) return;
       const f = $('input:not([type=checkbox]):not([type=file]),select,textarea', $('#modal-root'));
       (f || $('.modal-head button'))?.focus();
     });
@@ -637,6 +681,7 @@ import { storage } from './storage.js';
     $('#app').inert = false;
     document.body.style.overflow = '';
     lastFocus?.isConnected && lastFocus.focus();
+    setTimeout(refreshRemote, 0);
   }
   function confirmAction(title, text, callback) {
     modal = { type: 'confirm', callback };
@@ -819,10 +864,25 @@ import { storage } from './storage.js';
     modal = { type: 'settings' };
     showModal(
       '工作台设置',
-      `<form id="settings-form"><label class="field"><span>工作室名称</span><input name="name" required maxlength="12" value="${e(data.profile.name)}"></label><label class="field"><span>画师昵称</span><input name="artist" required maxlength="20" value="${e(data.profile.artist)}"></label><label class="field"><span>工作室备注</span><input name="tagline" maxlength="60" value="${e(data.profile.tagline)}"></label></form><div class="divider"></div><h3 style="font-size:12px">数据管理</h3><p class="settings-note" style="margin-top:9px">记录保存在本地电脑的 SQLite 数据库，图片单独保存。关闭浏览器或更新程序不会清空数据。数据目录：%LOCALAPPDATA%/Lotus-Workbench/data。</p><div class="settings-actions">${btn(icon('download') + '导出全部备份', 'backup-export')}${btn(icon('upload') + '导入备份', 'backup-import')}${btn('备份数据库与图片', 'backup-local')}${btn('导入此浏览器旧记录', 'import-browser')}${btn('清空全部记录', 'clear-data', 'danger')}</div><p class="settings-note">备份包含稿件、单主、平台、模板和素材。导入将替换当前工作台，请先保存好原来的备份。</p>`,
+      `<form id="settings-form"><label class="field"><span>工作室名称</span><input name="name" required maxlength="12" value="${e(data.profile.name)}"></label><label class="field"><span>画师昵称</span><input name="artist" required maxlength="20" value="${e(data.profile.artist)}"></label><label class="field"><span>工作室备注</span><input name="tagline" maxlength="60" value="${e(data.profile.tagline)}"></label></form><div class="divider"></div><h3 style="font-size:12px">数据管理</h3><p class="settings-note" style="margin-top:9px">记录保存在本地电脑的 SQLite 数据库，图片单独保存。关闭浏览器或更新程序不会清空数据。数据目录：%LOCALAPPDATA%/Lotus-Workbench/data。</p><div class="settings-actions">${btn(icon('download') + '导出全部备份', 'backup-export')}${btn(icon('upload') + '导入备份', 'backup-import')}${btn('合并旧手机备份', 'merge-phone-backup')}${btn('备份数据库与图片', 'backup-local')}${btn('导入此浏览器旧记录', 'import-browser')}${storage.localAccess ? btn('手机联动', 'lan-settings') : ''}${btn('清空全部记录', 'clear-data', 'danger')}</div><p class="settings-note">备份包含稿件、单主、平台、模板和素材。导入将替换当前工作台，请先保存好原来的备份。</p>`,
       `<button type="submit" form="settings-form" class="btn primary">保存设置</button>`,
       'narrow',
     );
+  }
+  async function showLanSettings() {
+    if (!storage.localAccess) { toast('请在电脑本机管理手机连接。'); return; }
+    const status = await storage.lanStatus();
+    modal = { type: 'lan-settings' };
+    showModal('手机联动', `<p class="settings-note">手机与电脑连接同一局域网，所有稿件和图片保存到电脑。仅在可信网络中使用；连接使用 HTTP。</p><form id="lan-form"><label class="check-row"><input name="lan-enabled" type="checkbox" ${status.enabled ? 'checked' : ''}>启用局域网手机访问</label><label class="field"><span>电脑网卡地址</span><select name="lan-address">${status.interfaces.map((item) => `<option value="${e(item.address)}" ${item.address === status.address ? 'selected' : ''}>${e(item.name)} · ${e(item.address)}</option>`).join('')}</select></label><label class="field"><span>允许的手机 IPv4 地址（多个用逗号分隔）</span><input name="lan-phones" value="${e(status.trustedAddresses.join(', '))}" placeholder="例如 192.168.1.168"></label><button type="submit" class="btn primary">保存连接设置</button></form><div class="divider"></div><p class="settings-note">${status.active ? `手机浏览器打开：<strong>${e(status.mobileUrl)}</strong>` : '局域网入口未开启。'}${status.error ? `<br>${e(status.error)}` : ''}<br>Windows 防火墙须只允许上述手机 IP、当前端口和“专用网络”。公用网络下规则不会生效。</p><button class="btn" data-action="lan-code" ${status.active ? '' : 'disabled'}>生成两分钟配对码</button><p id="lan-pairing-code" role="status"></p><div class="divider"></div><h3>已配对设备</h3>${status.devices.map((device) => `<div class="row between"><span>${e(device.name)} · ${e(device.address)}</span>${btn('撤销授权', 'lan-revoke', 'small', `data-id="${e(device.id)}"`)}</div>`).join('') || '<p class="settings-note">暂无配对设备。</p>'}`, btn('关闭', 'close-modal'), 'narrow');
+  }
+  async function saveLanForm(form) {
+    const submit = form.querySelector('button[type=submit]'); submit.disabled = true;
+    try {
+      const fd = new FormData(form);
+      await storage.configureLan({ enabled: fd.has('lan-enabled'), address: fd.get('lan-address'), trustedAddresses: String(fd.get('lan-phones') || '').split(/[，,\s]+/).filter(Boolean) });
+      await showLanSettings(); toast('手机连接设置已保存。');
+    } catch (error) { toast(error.message); }
+    finally { if (submit.isConnected) submit.disabled = false; }
   }
   async function importBrowserRecords() {
     const candidate = await storage.legacy();
@@ -842,6 +902,7 @@ import { storage } from './storage.js';
     location.hash = next;
     render();
     window.scrollTo(0, 0);
+    setTimeout(refreshRemote, 0);
   }
   function applyTemplate(t) {
     const keep = {
@@ -931,6 +992,14 @@ import { storage } from './storage.js';
         if (el.isConnected) el.disabled = false;
         break;
       }
+      case 'lan-settings':
+        await showLanSettings(); break;
+      case 'lan-code': {
+        const result = await storage.pairingCode();
+        $('#lan-pairing-code').textContent = result.code + '（两分钟内有效，使用一次失效）'; break;
+      }
+      case 'lan-revoke':
+        await storage.revokeDevice(id); await showLanSettings(); toast('设备授权已撤销。'); break;
       case 'settings':
         showSettings();
         break;
@@ -965,7 +1034,7 @@ import { storage } from './storage.js';
         const o = data.orders.find((o) => o.id === id);
         if (!o) return;
         o.status = el.dataset.stage;
-        persist();
+        if (!(await persist())) return;
         render();
         if (modal?.type === 'order-detail') showOrderDetail(id);
         toast('进度已更新为「' + o.status + '」');
@@ -973,7 +1042,7 @@ import { storage } from './storage.js';
       }
       case 'set-current':
         data.current = id;
-        persist();
+        if (!(await persist())) return;
         closeModal();
         navigate('home');
         toast('已切换当前稿件');
@@ -1025,7 +1094,7 @@ import { storage } from './storage.js';
           const imgs = await readImages(files);
           const o = data.orders.find((o) => o.id === id);
           o.images.push(...imgs.slice(0, 12 - o.images.length).map((x) => x.src));
-          await persist();
+          if (!(await persist())) return;
           render();
           toast('参考图片已添加');
         }, true);
@@ -1076,17 +1145,17 @@ import { storage } from './storage.js';
           draft.platform = p.id;
           draft.client = '';
           draft.fee = fee;
-          persist();
+          if (!(await persist())) return;
           renderOrderEditor();
         } else if (modal.type === 'client-editor') {
           captureClientDraft();
           data.platforms.push(p);
           draft.platforms.push(p.id);
-          persist();
+          if (!(await persist())) return;
           renderClientEditor();
         } else {
           data.platforms.push(p);
-          persist();
+          if (!(await persist())) return;
           render();
           showPlatforms();
         }
@@ -1103,7 +1172,7 @@ import { storage } from './storage.js';
           return;
         }
         data.platforms = data.platforms.filter((p) => p.id !== id);
-        persist();
+        if (!(await persist())) return;
         render();
         showPlatforms();
         break;
@@ -1129,7 +1198,7 @@ import { storage } from './storage.js';
         if (!data.clients.some((item) => item.id === id)) {
           data.clients.push(clone(c));
           data.archivedClients = (data.archivedClients || []).filter((item) => item.id !== id);
-          persist();
+          if (!(await persist())) return;
         }
         openOrderEditor();
         draft.client = id;
@@ -1235,7 +1304,7 @@ import { storage } from './storage.js';
         break;
       case 'delete-asset':
         data.assets = data.assets.filter((a) => a.id !== id);
-        persist();
+        if (!(await persist())) return;
         render();
         toast('素材已移除，已制作的模板会保留');
         break;
@@ -1252,7 +1321,7 @@ import { storage } from './storage.js';
       case 'clear-mark':
         watermark.mark = null;
         delete data.watermarkMark;
-        persist();
+        if (!(await persist())) return;
         render();
         break;
       case 'upload-tool-image':
@@ -1267,7 +1336,7 @@ import { storage } from './storage.js';
         break;
       case 'use-asset': {
         const a = data.assets.find((a) => a.id === id);
-        if (el.dataset.mode === 'watermark') setWatermark('mark', a.src);
+        if (el.dataset.mode === 'watermark') await setWatermark('mark', a.src);
         else if (el.dataset.mode === 'layout') addLayoutItems([a]);
         else {
           toolConfig.image = a.src;
@@ -1289,7 +1358,7 @@ import { storage } from './storage.js';
         if (idx < 0) data.toolTemplates.push(t);
         else data.toolTemplates[idx] = t;
         toolConfig.id = t.id;
-        persist();
+        if (!(await persist())) return;
         render();
         toast('模板已保存');
         break;
@@ -1303,10 +1372,10 @@ import { storage } from './storage.js';
       }
       case 'delete-tool-template': {
         const tid = id || toolConfig?.id;
-        confirmAction('删除这个创作模板？', '删除模板不会影响已有稿件或素材。', () => {
+        confirmAction('删除这个创作模板？', '删除模板不会影响已有稿件或素材。', async () => {
           data.toolTemplates = data.toolTemplates.filter((t) => t.id !== tid);
           if (toolConfig?.id === tid) delete toolConfig.id;
-          persist();
+          if (!(await persist())) return;
           closeModal();
           render();
           toast('模板已删除');
@@ -1350,7 +1419,7 @@ import { storage } from './storage.js';
           return;
         }
         data.toolTemplates.push({ id: uid(), kind: 'layout', name, layout: clone(layout) });
-        persist();
+        if (!(await persist())) return;
         render();
         toast('排版模板已保存');
         break;
@@ -1379,6 +1448,9 @@ import { storage } from './storage.js';
         break;
       case 'backup-import':
         pickFiles(importBackup, false, '.json');
+        break;
+      case 'merge-phone-backup':
+        pickFiles((files) => importBackup(files, true), false, '.json');
         break;
       case 'backup-local': {
         await saveQueue;
@@ -1438,10 +1510,12 @@ import { storage } from './storage.js';
     const el = event.target.closest('[data-action]');
     if (!el) return;
     event.preventDefault();
+    if (pendingSaves && el.dataset.action !== 'backup-export') { toast('正在等待电脑保存，请稍后再操作。'); return; }
+    interactionBusy++;
     handleAction(el.dataset.action, el).catch((err) => {
       console.error(err);
       toast('操作没有完成：' + err.message);
-    });
+    }).finally(() => { interactionBusy--; });
   });
   function captureClientDraft() {
     const fd = new FormData($('#client-form'));
@@ -1460,6 +1534,7 @@ import { storage } from './storage.js';
   document.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.target;
+    if (form.id === 'lan-form') { await saveLanForm(form); return; }
     if (form.id === 'order-form') {
       if (!form.reportValidity()) return;
       captureDraft();
@@ -1709,8 +1784,10 @@ import { storage } from './storage.js';
     input.multiple = multiple;
     input.accept = accept;
     input.onchange = () => {
-      if (input.files.length)
-        Promise.resolve(callback([...input.files])).catch((err) => toast(err.message));
+      if (input.files.length) {
+        const files = [...input.files]; interactionBusy++;
+        Promise.resolve().then(() => callback(files)).catch((err) => toast(err.message)).finally(() => { interactionBusy--; });
+      }
     };
     input.click();
   }
@@ -1753,16 +1830,16 @@ import { storage } from './storage.js';
   async function uploadAssets(files) {
     const imgs = await readImages(files);
     data.assets.push(...imgs);
-    await persist();
+    if (!(await persist())) return;
     render();
     toast(`已保存 ${imgs.length} 张素材，可在组件里重复使用`);
   }
-  function setWatermark(key, src) {
+  async function setWatermark(key, src) {
     if (!src) return;
     watermark[key] = src;
     if (key === 'mark') {
       data.watermarkMark = src;
-      persist();
+      if (!(await persist())) return;
     }
     render();
   }
@@ -1783,6 +1860,7 @@ import { storage } from './storage.js';
     zone.classList.remove('dragover');
     const files = [...event.dataTransfer.files];
     if (!files.length) return;
+    interactionBusy++;
     try {
       const kind = zone.dataset.drop;
       if (kind === 'draft') {
@@ -1794,20 +1872,20 @@ import { storage } from './storage.js';
         toolConfig.image = (await readImages(files))[0]?.src || '';
         render();
       } else if (kind === 'watermark-mark' || kind === 'watermark-image')
-        setWatermark(kind.endsWith('mark') ? 'mark' : 'image', (await readImages(files))[0]?.src);
+        await setWatermark(kind.endsWith('mark') ? 'mark' : 'image', (await readImages(files))[0]?.src);
       else {
         const o = data.orders.find((o) => o.id === data.current);
         if (o) {
           o.images.push(
             ...(await readImages(files)).slice(0, 12 - o.images.length).map((a) => a.src),
           );
-          persist();
+          if (!(await persist())) return;
           render();
         }
       }
     } catch (err) {
       toast(err.message);
-    }
+    } finally { interactionBusy--; }
   });
   const imageCache = new Map();
   function loadImage(src) {
@@ -2358,7 +2436,7 @@ import { storage } from './storage.js';
     push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF`);
     return new Blob(parts, { type: 'application/pdf' });
   }
-  async function importBackup(files) {
+  async function importBackup(files, merge = false) {
     const file = files[0];
     if (file.size > 128 * 1024 * 1024) throw new Error('备份请小于 128 MB');
     let candidate;
@@ -2368,28 +2446,28 @@ import { storage } from './storage.js';
       toast(err instanceof SyntaxError ? '这不是有效的 JSON 备份文件' : err.message);
       return;
     }
-    confirmImport(candidate);
+    confirmImport(candidate, merge);
   }
-  function confirmImport(candidate) {
+  function confirmImport(candidate, merge = false) {
     modal = {
       type: 'confirm',
       callback: async () => {
         await saveQueue;
         if (failedSave) throw new Error('当前修改未保存，请先导出备份并刷新。');
         await storage.backup();
-        data = candidate;
+        data = merge ? mergeBackup(data, candidate) : candidate;
         migrateAppearance();
         watermark.mark = data.watermarkMark || null;
         watermark.image = null;
         if (!(await persist())) return;
         closeModal();
         render();
-        toast('备份已导入，所有关联已恢复');
+        toast(merge ? '手机旧记录已合并，电脑已有记录和设置保留。' : '备份已导入，所有关联已恢复');
       },
     };
     showModal(
-      '导入并替换工作台？',
-      `<p class="settings-note">备份包含 ${candidate.orders.length} 份稿件、${candidate.clients.length} 位单主和 ${candidate.assets.length} 张素材。确认后先备份电脑中的现有数据，再替换电脑端记录。原浏览器记录保留。</p>`,
+      merge ? '合并旧手机备份？' : '导入并替换工作台？',
+      `<p class="settings-note">备份包含 ${candidate.orders.length} 份稿件、${candidate.clients.length} 位单主和 ${candidate.assets.length} 张素材。${merge ? '确认后先备份电脑数据，再用新编号添加副本，保留现有记录与设置。同名平台使用电脑设置，稿件本身费率保留。重复导入会添加重复副本。' : '确认后先备份电脑中的现有数据，再替换电脑端记录。'}原浏览器记录保留。</p>`,
       btn('取消', 'close-modal') + btn('确认导入', 'confirm-action', 'primary'),
       'narrow',
     );
@@ -2402,7 +2480,7 @@ import { storage } from './storage.js';
       $('#app').innerHTML =
         '<div class="loading">工作台读取失败：' +
         e(err.message) +
-        '<br>请通过桌面快捷方式启动本机服务。原数据未被清空。</div>';
+        '<br>请检查电脑服务和局域网连接后重新打开。原数据未被清空。</div>';
       console.error(err);
     });
 })();

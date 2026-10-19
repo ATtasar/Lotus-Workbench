@@ -70,22 +70,25 @@ async function health(port) {
     return null;
   }
 }
-async function api(endpoint) {
+async function api(endpoint, payload = {}, method = 'POST') {
   const state = readState();
   if (!state || state.appId !== appId) throw new Error('本机服务未运行。');
   const h = await health(state.port);
   if (!h || h.instance !== state.instance || h.pid !== state.pid)
     throw new Error('服务身份不匹配，不会操作其他进程。');
-  const r = await fetch(`http://127.0.0.1:${state.port}/local-api/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Lotus-Local': '1',
-      'X-Lotus-Token': state.token,
+  const r = await fetch(
+    `http://127.0.0.1:${state.port}${state.apiBase || '/local-api/'}${endpoint}`,
+    {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Lotus-Local': '1',
+        'X-Lotus-Token': state.token,
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(payload) } : {}),
+      signal: AbortSignal.timeout(120000),
     },
-    body: '{}',
-    signal: AbortSignal.timeout(120000),
-  });
+  );
   const body = await r.json();
   if (!r.ok) throw new Error(body.message || '本地服务操作失败。');
   return body;
@@ -110,6 +113,7 @@ function npm(argv) {
 }
 async function openBrowser(url) {
   if (args.includes('--no-browser')) return;
+  if (args.includes('--connect-phone')) url += '/?connect=phone';
   const script = "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:LOTUS_LOCAL_URL";
   if (process.platform === 'win32') {
     const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
@@ -130,7 +134,7 @@ async function start() {
     // A concurrent shortcut launch waits for the first launcher, then reuses it.
     for (let n = 0; n < 40 && fs.existsSync(lock); n++) {
       const h = await health(c.port);
-      if (h?.appId === appId && h.ui === 'desktop-blank') {
+      if (h?.appId === appId && h.ui === 'desktop-blank' && h.protocol === 2) {
         console.log('复用已运行服务：' + url);
         await openBrowser(url);
         return;
@@ -145,6 +149,8 @@ async function start() {
     const h = await health(c.port),
       state = readState();
     if (h?.appId === appId && state?.instance === h.instance) {
+      if (h.protocol !== 2)
+        throw new Error('本地服务需要更新，请先运行 Install-Local.cmd，现有数据会保留。');
       if (h.ui !== 'desktop-blank')
         throw new Error(
           '旧手机界面服务仍在运行。请运行 Install-Local.cmd 安全更新为电脑端，原数据库会保留。',
@@ -399,7 +405,47 @@ try {
   else if (command === 'shortcut') await shortcut();
   else if (command === 'backup') await backup();
   else if (command === 'restore') await restore();
-  else throw new Error('可用命令：install / start / stop / shortcut / backup / restore');
+  else if (command === 'lan-enable') {
+    const address = value('--address'),
+      phone = value('--phone-address');
+    if (!address || !phone)
+      throw new Error(
+        '请提供 --address 电脑IPv4 和 --phone-address 手机IPv4。也可双击 Connect-Phone.cmd 在设置中填写。',
+      );
+    await start();
+    const result = await api('lan/config', {
+      enabled: true,
+      address,
+      trustedAddresses: phone.split(',').map((ip) => ip.trim()),
+    });
+    console.log('手机浏览器地址：' + result.mobileUrl);
+    console.log(
+      '还需配置仅允许指定手机 IP 和专用网络的 Windows 防火墙规则；不会自动更改网络类别。',
+    );
+  } else if (command === 'lan-disable') {
+    await start();
+    await api('lan/config', { enabled: false });
+    console.log('局域网入口已关闭，本地数据库保留。');
+  } else if (command === 'lan-status') {
+    const result = await api('lan/status', {}, 'GET');
+    console.log(JSON.stringify(result, null, 2));
+  } else if (command === 'lan-firewall') {
+    const { configureFirewall } = await import('./lan-firewall.mjs');
+    const { LanAccess } = await import(pathToFileURL(path.join(source, 'local-dist/lan.mjs')).href);
+    const access = new LanAccess(root);
+    if (!access.config.enabled && !args.includes('--remove'))
+      throw new Error('请先通过 Connect-Phone.cmd 设置电脑和手机 IP。');
+    if (!args.includes('--remove'))
+      access.validate(access.config.address, access.config.trustedAddresses);
+    await configureFirewall({
+      address: access.config.address,
+      phones: access.config.trustedAddresses,
+      port: config().port,
+      node: process.execPath,
+      remove: args.includes('--remove'),
+      checkOnly: args.includes('--check-only'),
+    });
+  } else throw new Error('可用命令：install / start / stop / shortcut / backup / restore');
 } catch (e) {
   console.error('操作失败：' + e.message);
   console.error('原数据不会被自动清空。配置与日志目录：' + root);

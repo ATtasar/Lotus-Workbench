@@ -101,6 +101,8 @@ try {
   await action('new-client');
   await page.locator('[name=name]').fill('电脑端测试单主');
   await page.locator('[name=preferences]').fill('保留留白');
+  assert.equal(await page.locator('[name=name]').inputValue(), '电脑端测试单主');
+  assert.equal(await page.locator('[name=preferences]').inputValue(), '保留留白');
   await action('inline-platform');
   await page.locator('#new-platform-name').fill('测试平台');
   await action('save-inline-platform');

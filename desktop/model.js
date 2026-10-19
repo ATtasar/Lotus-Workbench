@@ -180,3 +180,36 @@ export function validateBackup(raw) {
     : raw.orders[0]?.id || '';
   return raw;
 }
+// Safe migration from a previously independent phone: append copies with new
+// identities, retain PC settings and rewrite every commission association.
+export function mergeBackup(current, incoming) {
+  const merged = validateBackup(structuredClone(current));
+  const source = validateBackup(structuredClone(incoming));
+  const allIds = new Set(['platforms','clients','archivedClients','orders','templates','assets','toolTemplates'].flatMap((key) => merged[key].map((item) => item.id)));
+  const newId = () => {
+    let id;
+    do { id = globalThis.crypto?.randomUUID?.() || 'import_' + Date.now().toString(36) + Math.random().toString(36).slice(2); } while (allIds.has(id));
+    allIds.add(id); return id;
+  };
+  const platforms = new Map(), clients = new Map(), orders = new Map();
+  for (const item of source.platforms) {
+    const existing = merged.platforms.find((record) => record.name === item.name);
+    const id = existing?.id || newId(); platforms.set(item.id, id);
+    if (!existing) merged.platforms.push({ ...item, id });
+  }
+  for (const key of ['clients','archivedClients']) for (const item of source[key]) {
+    if (clients.has(item.id)) throw new Error('旧备份包含重复的单主编号，已取消合并。');
+    const id = newId(); clients.set(item.id, id);
+    merged[key].push({ ...item, id, platforms: item.platforms.map((value) => platforms.get(value)) });
+  }
+  for (const item of source.orders) {
+    const id = newId(); orders.set(item.id, id);
+    merged.orders.push({ ...item, id, platform: platforms.get(item.platform), client: clients.get(item.client) });
+  }
+  for (const item of source.templates) merged.templates.push({ ...item, id: newId(), platform: platforms.get(item.platform) });
+  for (const item of source.assets) merged.assets.push({ ...item, id: newId() });
+  for (const item of source.toolTemplates) merged.toolTemplates.push({ ...item, id: newId(), ...(item.order ? { order: orders.get(item.order) || '' } : {}) });
+  if (!merged.current) merged.current = orders.get(source.current) || '';
+  if (!merged.watermarkMark && source.watermarkMark) merged.watermarkMark = source.watermarkMark;
+  return validateBackup(merged);
+}

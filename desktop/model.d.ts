@@ -18,3 +18,4 @@ export interface DesktopData {
 }
 export function initialData(): DesktopData;
 export function validateBackup(raw: unknown): DesktopData;
+export function mergeBackup(current: unknown, incoming: unknown): DesktopData;

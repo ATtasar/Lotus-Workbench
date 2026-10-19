@@ -39,3 +39,9 @@ app-dist/
 *.dpapi
 *.lotuskey
 *signing*.properties
+lan-access.json
+runtime/
+backups/
+/data/
+/logs/
+/config.json

@@ -1,34 +1,26 @@
-// The desktop UI talks only to the loopback service. Browser storage is read
-// solely for a confirmed migration; it is never the primary data store.
+// Both UIs use the same PC service. Browser storage is read solely for a
+// confirmed migration; it is never the primary data store.
 import { validateBackup } from './model.js';
-let token;
+import { request, connect, localAccess } from './api.js';
 let revision;
 let blocked = false;
-async function request(endpoint, body) {
-  if (!token) {
-    const session = await fetch('/local-api/session', {
-      headers: { 'X-Lotus-Local': '1' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!session.ok) throw new Error('无法连接本机服务，请从桌面快捷方式重新打开工作台。');
-    token = (await session.json()).token;
-  }
-  const response = await fetch('/local-api/' + endpoint, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: {
-      'X-Lotus-Local': '1',
-      'X-Lotus-Token': token,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(120000),
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.message || '本机数据操作失败。');
-  return result;
-}
 export const storage = {
+  localAccess,
+  version: () => revision,
+  remoteRevision: async () => (await request('revision')).revision,
+  readRemote: () => request('desktop-workspace'),
+  acceptRemote(snapshot) {
+    const data = validateBackup(snapshot.data);
+    if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < revision) throw new Error('读取到旧版本，已取消覆盖。');
+    revision = snapshot.revision;
+    return data;
+  },
+  lanStatus: () => request('lan/status'),
+  configureLan: (data) => request('lan/config', data),
+  pairingCode: () => request('lan/code', {}),
+  revokeDevice: (id) => request('lan/revoke', { id }),
   async load() {
+    await connect(true);
     const result = await request('desktop-workspace');
     revision = result.revision;
     return validateBackup(result.data);

@@ -12,7 +12,7 @@ SQLite 保存电脑端记录，图片和素材保存为电脑上的独立文件�
 
 脚本检查 Node/npm，缺少项目依赖时运行 `npm ci`，构建 `desktop/` 的原电脑端页面与本机服务，初始化独立数据目录，创建桌面“**创作者工作台**”快捷方式，等待 SQLite 和 HTTP 健康检查通过，再打开默认浏览器。安装完成后，核心功能完全从本机加载，可断网使用。不能直接双击 `desktop/index.html`：这个新入口使用本机 SQLite 服务，应从桌面快捷方式打开。
 
-默认地址：**http://127.0.0.1:17841**。服务只绑定 `127.0.0.1`，不会监听局域网地址。不创建防火墙规则、不设置系统服务或开机任务，不需要以管理员身份运行。
+默认地址：**http://127.0.0.1:17841**。默认只绑定 `127.0.0.1`。安装不创建防火墙规则、不设置系统服务或开机任务，不需要以管理员身份运行。需要手机访问时，按 [局域网联动说明](START-HERE-LAN.md) 主动启用额外的指定私网地址监听，并单独配置受限防火墙规则。
 
 如果 `.ps1` 被系统策略阻止，使用 `.cmd` 即可；不必关闭执行策略、杀毒或系统安全机制。请使用本说明的本地入口，原有 `deploy/windows`、Docker 和 Windows Server 文档继续用于原云端方案。
 
@@ -23,7 +23,7 @@ SQLite 保存电脑端记录，图片和素材保存为电脑上的独立文件�
 - 想完全退出时双击程序目录里的 **`Stop-Local.cmd`**，或运行 `./Stop-Local.ps1`。
 - 重启电脑后再次双击快捷方式。无需先运行 npm 或手动开服务器。
 
-请等“已保存”再关页面。同一时间建议只在一个窗口编辑；检测到其他窗口已提交新版本时会拒绝覆盖并显示保存错误，请先导出当前窗口内容，再重新打开。不会自动用旧窗口覆盖新记录。
+请等“已保存”再关页面。页面每 3 秒检查其他端的版本；没有编辑中的表单或图片组件时会自动读取新数据。编辑中保留当前输入并显示“另一端有更新”；旧版本提交会被拒绝，请先导出当前窗口内容，再重新打开并处理冲突。
 
 ## 数据实际保存位置
 
@@ -33,11 +33,12 @@ SQLite 保存电脑端记录，图片和素材保存为电脑上的独立文件�
 %LOCALAPPDATA%\Lotus-Workbench\
 ├─ config.json                    本机端口、安装位置，不含云端账号
 ├─ data\
-│  ├─ workbench.sqlite            订单、任务、文件夹、物品、评价、关联和设置
+│  ├─ workbench.sqlite            稿件、单主、平台、模板、设置及保留的历史表
 │  ├─ workbench.sqlite-wal        SQLite 运行时可能存在的日志
 │  ├─ workbench.sqlite-shm        SQLite 运行时可能存在的共享文件
 │  └─ files\                     图片、PDF、TXT，按内容摘要命名去重
 ├─ backups\                      完整数据库与附件备份
+├─ lan-access.json               可选手机联动配置、设备凭据摘要，不要上传
 ├─ logs\                         本地服务日志
 ├─ runtime\                      PID、启动锁和本机控制信息，不要上传
 └─ preserved-data-*\              完整恢复时保留的恢复前原目录（如有）
@@ -98,6 +99,8 @@ npm run local:restore -- --from 'D:\我的备份\完整备份目录'
 
 在“工作台设置 → 导入备份”选择原电脑端 JSON，检查数量并确认后替换。会先做一份完整的恢复前备份；备份失败会取消恢复。不接受结构不同的 React 手机端 JSON，避免错误关联；完整 SQLite 备份可以保留和恢复两套数据。结构版本 1 的旧 SQLite 备份也支持恢复，随后安全迁移为版本 2；这类旧备份不包含新电脑端记录，恢复前请另行导出需要保留的新数据。
 
+同一稿件模型的旧手机 HTML 备份可以在“**合并旧手机备份**”中导入：保留电脑已有记录，为导入记录生成新编号并重连关联，防止覆盖。详细规则见 [手机联动说明](START-HERE-LAN.md)。
+
 ## 旧浏览器数据怎么迁移
 
 - 同一网址、同一浏览器里如有原电脑端 `still-commission-workbench-blank-v1 / state / workspace` 或旧 localStorage，可在“工作台设置 → 导入此浏览器旧记录”读取，检查数量并确认后复制。原浏览器记录不删除，不自动覆盖。
@@ -122,12 +125,14 @@ npm run local:restore -- --from 'D:\我的备份\完整备份目录'
 ├─ Start-Local.ps1 / .cmd
 ├─ Stop-Local.ps1 / .cmd
 ├─ Create-DesktopShortcut.ps1 / .cmd
+├─ Connect-Phone.cmd / Set-LanFirewall.cmd
 ├─ START-HERE-LOCAL-WINDOWS.md
 ├─ LOCAL-WINDOWS-VALIDATION.md
 ├─ desktop\                     指定的电脑端空白版 UI、原样式和交互
 │  ├─ index.html / app.js / styles.css
 │  ├─ model.js                   电脑端数据模型与原校验逻辑
 │  └─ storage.js                 电脑端本机数据访问入口
+├─ mobile\                      原手机版样式与展示逻辑，共用稿件 API
 ├─ src\                         保留的原 React 手机项目与业务逻辑
 ├─ local\                       SQLite、本地 HTTP 服务
 ├─ scripts\build-local.mjs       本地构建
@@ -135,7 +140,8 @@ npm run local:restore -- --from 'D:\我的备份\完整备份目录'
 ├─ local-dist\                  安装时生成，不提交 Git
 │  ├─ web\                      已打包页面、CSS、图标、资源
 │  ├─ server.mjs
-│  └─ store.mjs
+│  ├─ store.mjs
+│  └─ lan.mjs
 ├─ tests\desktop-*              电脑端 SQLite、浏览器和联动验证
 ├─ tests\local-*                原持久化、恢复及启动验证
 ├─ backend\                     保留原云端后端，本地版不用
@@ -144,7 +150,7 @@ npm run local:restore -- --from 'D:\我的备份\完整备份目录'
 
 `npm run build`（或 `npm run build:local`）构建电脑端，`npm run local:start` 启动，`npm run local:stop` 停止。也可单独运行 `Create-DesktopShortcut.cmd` 重建快捷方式。`.ps1` 入口调用同一 Node 实现，不需要维护两套部署逻辑。
 
-本地构建复制 `desktop/` 的页面资源，打包 Node SQLite 服务，不读取云端 Vite 参数。即使原 `.env` 留有云端参数也不启用云端登录/API。服务静态目录只指向 `local-dist/web`，不提供源码、用户数据目录或 `.env`。接口拒绝外站 Origin/Host，写入有本机令牌和版本冲突检查，不向网络开放 CORS。
+本地构建复制 `desktop/` 和 `mobile/` 的页面资源，打包 Node SQLite 服务，不读取云端 Vite 参数。即使原 `.env` 留有云端参数也不启用云端登录/API。服务静态目录只指向 `local-dist/web`，不提供源码、用户数据目录或 `.env`。接口拒绝外站 Origin/Host，写入有令牌和版本冲突检查，不开放跨站 CORS；手机通过同源页面和设备配对访问同一个 API。
 
 SQLite 数据库结构当前为 2，电脑端业务格式为 1，保留的手机端业务格式为 3。将来改表必须先备份，提供明确逐版本事务迁移和失败回滚测试；不能用清库或启动时重置解决错误。电脑端平台、单主和稿件关联使用从原 HTML 提取的校验器，整份变更在事务中提交；原手机表的外键关系保留。
 
