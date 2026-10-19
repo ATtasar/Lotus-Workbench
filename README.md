@@ -2,7 +2,14 @@
 
 黑白灰界面的个人接稿工作台。默认从空白开始，自行添加平台、单主、稿件、模板和素材。
 
-在线访问：[打开工作台](https://attasar.github.io/Lotus-Workbench/)
+## 版本与入口
+
+| 版本 | 在线网址 | 入口与源码 |
+| --- | --- | --- |
+| 桌面版 | [打开桌面版](https://attasar.github.io/Lotus-Workbench/) | `index.html`、`src/` |
+| 手机版 | [打开手机版](https://attasar.github.io/Lotus-Workbench/mobile/) | `mobile/index.html`、`mobile/src/` |
+
+手机版单独存放在 `mobile/` 目录，入口、源码、构建和浏览器数据均与桌面版分开。原桌面网址保持不变，两个入口不会自动跳转。手机端说明见 [mobile/README.md](mobile/README.md)。
 
 ## 功能
 
@@ -16,7 +23,7 @@
 
 ## 数据保存
 
-订单和图片保存在当前浏览器的 IndexedDB 中，不会上传到 GitHub。不同设备、浏览器和网站地址的记录相互独立；可通过工作台设置中的备份功能迁移数据。网页不包含账户、云端同步或实际支付功能。
+订单和图片保存在当前浏览器的 IndexedDB 中，不会上传到 GitHub。桌面版与手机版使用不同的数据库名称，即使在同一浏览器打开也不会混用。不同设备和浏览器的记录各自保存；可通过工作台设置中的备份功能迁移数据。网页不包含账户、云端同步或实际支付功能。
 
 ## 本地使用
 
@@ -26,14 +33,20 @@
 npm run dev
 ```
 
-访问终端显示的本地地址。项目没有第三方运行依赖，无需执行 `npm install`。
+访问终端显示的本地地址查看桌面版；在地址后加上 `/mobile/` 查看手机版。项目没有第三方运行依赖，无需执行 `npm install`。
 
 ## 修改与发布
 
-可编辑源码位于 `src/`。修改后执行：
+桌面版源码位于 `src/`。修改后执行：
 
 ```sh
 npm run build
 ```
 
-将更新后的源码和根目录 `index.html` 一起提交到 `main` 分支。GitHub Pages 使用 `main` 分支的根目录发布；`.nojekyll` 表示直接提供静态文件。所有样式和脚本均包含在生成的网页入口中，支持 GitHub Pages 的项目子路径。
+手机版源码位于 `mobile/src/`。修改后单独执行：
+
+```sh
+npm run build:mobile
+```
+
+两个构建命令分别更新各自的入口，不会互相覆盖。将修改的源码及对应生成入口一起提交到 `main` 分支。GitHub Pages 使用 `main` 分支的根目录发布；`.nojekyll` 表示直接提供静态文件。每个版本的样式和脚本均包含在各自的网页入口中，支持 GitHub Pages 的项目子路径。

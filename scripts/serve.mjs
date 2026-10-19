@@ -15,8 +15,15 @@ http.createServer((req, res) => {
     if (pathname.split('/').some(part => part.startsWith('.'))) {
       res.writeHead(403); res.end(); return;
     }
-    const target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
+    let target = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
     if (!target.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
+    if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+      if (!pathname.endsWith('/')) {
+        const location = new URL(req.url, 'http://localhost');
+        res.writeHead(301, { Location: location.pathname + '/' + location.search }); res.end(); return;
+      }
+      target = path.join(target, 'index.html');
+    }
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) { res.writeHead(404); res.end('Not found'); return; }
     res.writeHead(200, { 'Content-Type': types[path.extname(target)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     fs.createReadStream(target).pipe(res);

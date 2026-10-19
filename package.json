@@ -6,6 +6,7 @@
   "description": "个人接稿工作台，管理稿件、单主、排期、模板与交付素材。",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:mobile": "node mobile/build.mjs",
     "dev": "node scripts/serve.mjs"
   },
   "engines": {

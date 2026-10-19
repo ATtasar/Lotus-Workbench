@@ -1,0 +1,1922 @@
+/* Mobile presentation. Business data and canvas operations use the desktop logic. */
+html {
+  background: #eaeaea;
+  scrollbar-gutter: auto;
+}
+body.mobile-app {
+  max-width: 460px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: #f6f6f6;
+  font:
+    14px/1.65 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  color: #191919;
+  box-shadow: 0 0 0 1px #ddd;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+.mobile-app * {
+  min-width: 0;
+}
+.mobile-app button {
+  touch-action: manipulation;
+}
+.mobile-app h1 {
+  font-size: 27px;
+  letter-spacing: -0.7px;
+  font-weight: 650;
+}
+.mobile-app h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.mobile-app h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.mobile-app .shell {
+  margin-left: 0;
+  min-height: 100dvh;
+}
+.mobile-app .content {
+  padding: 24px 18px calc(108px + env(safe-area-inset-bottom));
+  max-width: none;
+}
+.mobile-app .topbar {
+  height: auto;
+  min-height: 69px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #e9e9e9;
+  background: #ffffffed;
+  backdrop-filter: blur(16px);
+  position: sticky;
+  top: 0;
+  z-index: 35;
+}
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0;
+  text-align: left;
+  max-width: 210px;
+}
+.mobile-brand-mark {
+  width: 31px;
+  height: 33px;
+  border-radius: 7px;
+  background: #191919;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.mobile-brand > span:last-child {
+  min-width: 0;
+}
+.mobile-brand strong {
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.mobile-brand small {
+  display: block;
+  font-size: 9px;
+  color: #9a9a9a;
+  margin-top: 1px;
+  letter-spacing: 0.3px;
+}
+.mobile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.mobile-app .mobile-header-actions .icon-btn {
+  border: 0;
+  background: none;
+  width: 35px;
+  height: 40px;
+  border-radius: 7px;
+}
+.mobile-app .mobile-header-actions .icon-btn .icon {
+  width: 18px;
+  height: 18px;
+}
+.mobile-save {
+  font-size: 9px;
+  color: #999;
+  white-space: nowrap;
+  margin-right: 5px;
+}
+.mobile-save .live-dot {
+  width: 4px;
+  height: 4px;
+  background: #555;
+  margin-right: 4px;
+}
+.mobile-app .nav.mobile-tabs {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 460px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+  z-index: 40;
+  background: #fffffff5;
+  backdrop-filter: blur(18px);
+  border-top: 1px solid #e4e4e4;
+  padding: 8px 7px max(10px, env(safe-area-inset-bottom));
+}
+.mobile-app .nav.mobile-tabs button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  min-height: 50px;
+  background: none;
+  border-radius: 6px;
+  color: #929292;
+  position: relative;
+  font-weight: 400;
+}
+.mobile-app .nav.mobile-tabs button > span {
+  display: block;
+}
+.mobile-app .nav.mobile-tabs button .tab-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 28px;
+  border-radius: 8px;
+}
+.mobile-app .nav.mobile-tabs button .icon {
+  width: 19px;
+  height: 19px;
+}
+.mobile-app .nav.mobile-tabs button .tab-label {
+  font-size: 10px;
+  line-height: 1.4;
+}
+.mobile-app .nav.mobile-tabs button.active {
+  color: #191919;
+  background: none;
+  font-weight: 600;
+}
+.mobile-app .nav.mobile-tabs button.active .tab-icon {
+  background: #191919;
+  color: #fff;
+}
+.mobile-app .btn {
+  min-height: 40px;
+  padding: 8px 13px;
+  font-size: 12px;
+  border-radius: 8px;
+  gap: 6px;
+}
+.mobile-app .btn.small {
+  min-height: 35px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.mobile-app .btn.primary {
+  background: #191919;
+  border-color: #191919;
+}
+.mobile-app .btn .icon {
+  width: 15px;
+  height: 15px;
+}
+.mobile-app .icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+}
+.mobile-app .icon-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+.mobile-app .badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+.mobile-app .platform-tag {
+  font-size: 11px;
+  gap: 5px;
+}
+.mobile-app .dot {
+  width: 5px;
+  height: 5px;
+}
+.mobile-app .page-intro {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin-bottom: 23px;
+}
+.mobile-app .page-intro > div {
+  flex-basis: auto;
+  flex: 1;
+}
+.mobile-app .page-intro .page-heading {
+  gap: 9px;
+  align-items: center;
+}
+.mobile-app .page-intro .page-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  line-height: 1.7;
+  background: #e9e9e9;
+}
+.mobile-app .page-intro h1 {
+  font-size: 26px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.mobile-app .page-intro p {
+  font-size: 11px;
+  color: #999;
+  margin-top: 7px;
+  line-height: 1.8;
+  max-width: 290px;
+}
+.mobile-app .page-intro > .btn {
+  min-height: 39px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.mobile-app .page-intro > .btn .icon {
+  width: 15px;
+  height: 15px;
+}
+.mobile-summary {
+  display: flex;
+  align-items: center;
+  gap: 29px;
+  position: relative;
+  padding: 0 2px 23px;
+  margin-top: -2px;
+}
+.mobile-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mobile-summary > div > span {
+  font-size: 11px;
+  color: #949494;
+}
+.mobile-summary strong {
+  font-size: 29px;
+  font-weight: 550;
+  line-height: 1.35;
+  letter-spacing: -1.2px;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-summary strong small {
+  font-size: 10px;
+  font-weight: 400;
+  color: #aaa;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+.summary-symbol {
+  margin-left: auto;
+  width: 47px;
+  height: 47px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e3e3e3;
+  border-radius: 13px;
+  background: #fff;
+  color: #aaa;
+  transform: rotate(-7deg);
+}
+.summary-symbol .icon {
+  width: 22px;
+  height: 22px;
+}
+.mobile-app .panel {
+  border: 1px solid #e4e4e4;
+  border-radius: 13px;
+  background: #fff;
+}
+.mobile-app .panel-header {
+  padding: 19px 17px;
+  gap: 10px;
+}
+.mobile-app .panel-title {
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.mobile-app .panel-title h2,
+.mobile-app .current-title h2 {
+  font-size: 15px;
+  white-space: nowrap;
+}
+.mobile-subdate {
+  font-size: 9px;
+  color: #aaa;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-app .week-panel {
+  margin-bottom: 20px;
+}
+.mobile-app .week-toolbar {
+  gap: 4px;
+}
+.mobile-app .week-toolbar .icon-btn {
+  height: 30px;
+  width: 27px;
+  border: 0;
+  background: #fafafa;
+}
+.mobile-app .week-toolbar > .btn {
+  display: inline-flex;
+  font-size: 10px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 0;
+  background: none;
+  color: #777;
+}
+.mobile-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  padding: 0 12px 15px;
+}
+.mobile-week-day {
+  height: 79px;
+  padding: 9px 0 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #858585;
+}
+.mobile-week-day > span:first-child {
+  font-size: 10px;
+}
+.mobile-week-day strong {
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.8;
+  font-variant-numeric: tabular-nums;
+  color: #333;
+}
+.mobile-week-day.is-today {
+  border-color: #dedede;
+  background: #fafafa;
+}
+.mobile-week-day.selected {
+  background: #202020;
+  border-color: #202020;
+  color: #bcbcbc;
+}
+.mobile-week-day.selected strong {
+  color: #fff;
+}
+.week-dots {
+  height: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.week-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  display: block;
+}
+.mobile-week-day.selected .week-dots i {
+  background: #ccc !important;
+}
+.week-dots .no-dot {
+  visibility: hidden;
+}
+.mobile-agenda {
+  padding: 0 17px 7px;
+}
+.agenda-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+  gap: 10px;
+}
+.agenda-heading > span {
+  font-size: 12px;
+  font-weight: 500;
+}
+.agenda-heading small {
+  font-size: 9px;
+  font-weight: 400;
+  color: #aaa;
+  margin-left: 9px;
+}
+.mobile-app .agenda-heading .btn {
+  font-size: 10px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: #929292;
+}
+.mobile-app .agenda-heading .btn .icon {
+  width: 12px;
+  height: 12px;
+}
+.agenda-empty {
+  text-align: center;
+  padding: 24px 0 25px;
+  font-size: 11px;
+  color: #aaa;
+}
+.agenda-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 67px;
+  padding: 12px 0;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+.agenda-item:last-child {
+  border-bottom: 0;
+}
+.agenda-marker {
+  height: 31px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--platform, #555);
+  flex-shrink: 0;
+}
+.agenda-copy {
+  min-width: 0;
+  flex: 1;
+}
+.agenda-copy strong {
+  font-size: 12px;
+  font-weight: 500;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #333;
+}
+.agenda-copy small {
+  font-size: 10px;
+  color: #aaa;
+  display: block;
+  margin-top: 3px;
+}
+.agenda-kind {
+  font-size: 10px;
+  color: #888;
+  background: #f4f4f4;
+  border-radius: 4px;
+  padding: 3px 7px;
+}
+.agenda-item > .icon {
+  width: 12px;
+  height: 12px;
+  color: #aaa;
+}
+.mobile-app .current-panel > .panel-header {
+  flex-wrap: nowrap;
+  border-bottom: 1px solid #ececec;
+  padding: 17px;
+}
+.mobile-app .current-panel .panel-header > .row {
+  gap: 5px;
+}
+.mobile-app .current-panel .btn.small {
+  font-size: 11px;
+  min-height: 33px;
+  padding: 5px 9px;
+}
+.mobile-app .current-panel .icon-btn {
+  width: 32px;
+  height: 33px;
+}
+.mobile-app .current-title {
+  gap: 8px;
+}
+.mobile-app .mobile-empty {
+  padding: 35px 21px 32px;
+  border: 1px solid #e4e4e4;
+  border-radius: 13px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.mobile-app .mobile-empty > .icon {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #bcbcbc;
+  margin-bottom: 14px;
+  stroke-width: 1.2;
+}
+.mobile-empty h3 {
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+}
+.mobile-empty p {
+  font-size: 11px;
+  color: #aaa;
+  margin: 7px 0 19px;
+  line-height: 1.85;
+  max-width: 260px;
+}
+.mobile-app .mobile-empty .btn {
+  min-height: 37px;
+  font-size: 11px;
+  padding: 7px 12px;
+}
+.mobile-app .current-panel .mobile-empty {
+  border: 0;
+  border-radius: 0;
+  padding-top: 32px;
+  padding-bottom: 30px;
+}
+.mobile-app .current-body {
+  display: block;
+  min-height: 0;
+}
+.mobile-app .art-region {
+  padding: 16px;
+  background: #fafafa;
+  border-right: 0;
+  border-bottom: 1px solid #eee;
+}
+.mobile-app .art-frame {
+  height: 270px;
+  border-radius: 7px;
+}
+.mobile-app .art-controls {
+  margin-top: 12px;
+}
+.mobile-app .thumb {
+  width: 45px;
+  height: 45px;
+  border-radius: 5px;
+}
+.mobile-app .thumb.add {
+  width: 44px;
+  height: 44px;
+}
+.mobile-app .image-label {
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.mobile-app .image-caption {
+  font-size: 10px;
+  gap: 4px;
+}
+.mobile-app .order-info {
+  padding: 20px 18px 23px;
+}
+.mobile-app .order-title {
+  font-size: 21px;
+  line-height: 1.5;
+  letter-spacing: -0.5px;
+  margin: 10px 0;
+}
+.mobile-app .order-number {
+  font-size: 10px;
+}
+.mobile-app .order-topline {
+  margin-bottom: 7px;
+}
+.mobile-app .order-meta {
+  font-size: 10px;
+  gap: 12px;
+}
+.mobile-app .order-meta .icon {
+  width: 12px;
+  height: 12px;
+}
+.mobile-app .client-line {
+  padding: 18px 0;
+  gap: 10px;
+}
+.mobile-app .client-line .avatar {
+  width: 35px;
+  height: 35px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.mobile-app .client-line strong {
+  font-size: 12px;
+}
+.mobile-app .client-line small {
+  font-size: 10px;
+}
+.mobile-app .client-line button {
+  font-size: 11px;
+}
+.mobile-app .requirements {
+  padding: 13px 0;
+}
+.mobile-app .requirement-row {
+  grid-template-columns: 63px 1fr;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.9;
+  margin: 9px 0;
+}
+.mobile-app .requirement-row label {
+  font-size: 11px;
+  color: #999;
+}
+.mobile-app .requirement-row p {
+  color: #626262;
+}
+.mobile-app .progress-label {
+  font-size: 11px;
+  margin: 18px 0 15px;
+}
+.mobile-app .stages {
+  margin-bottom: 10px;
+}
+.mobile-app .stage {
+  font-size: 9px;
+  gap: 9px;
+  min-height: 44px;
+}
+.mobile-app .stage-ball {
+  width: 17px;
+  height: 17px;
+}
+.mobile-app .stage:before {
+  top: 8px;
+}
+.mobile-app .order-bottom {
+  margin-top: 20px;
+  gap: 10px;
+}
+.mobile-app .amount {
+  font-size: 24px;
+  font-weight: 550;
+}
+.mobile-app .amount small {
+  display: block;
+  margin: 3px 0 0;
+  font-size: 10px;
+}
+.mobile-app .order-bottom .btn {
+  min-height: 38px;
+  font-size: 11px;
+}
+.mobile-app .toolbar {
+  display: flex;
+  gap: 9px;
+  margin-bottom: 17px;
+  align-items: center;
+}
+.mobile-app .searchbox {
+  flex: 0 0 100%;
+  min-width: 0;
+  width: 100%;
+  height: 45px;
+  padding: 10px 13px;
+  border-color: #e0e0e0;
+  border-radius: 9px;
+}
+.mobile-app .searchbox input {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.mobile-app .searchbox .icon {
+  width: 16px;
+  height: 16px;
+}
+.mobile-app .filter {
+  font-size: 12px;
+  min-width: 0;
+  min-height: 42px;
+  border-radius: 8px;
+  border-color: #e0e0e0;
+  flex: 1;
+  background: #fff;
+  max-width: none;
+  padding: 9px 10px;
+}
+.mobile-app .toolbar .grow {
+  display: none;
+}
+.mobile-app .toolbar > .btn {
+  padding: 6px 9px;
+  font-size: 10px;
+  min-height: 36px;
+  border-color: #e4e4e4;
+  color: #888;
+}
+.mobile-app .toolbar-count {
+  font-size: 10px;
+  margin-left: auto;
+}
+.mobile-app .batchbar {
+  gap: 8px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 69px;
+  z-index: 20;
+  padding: 11px;
+  border-radius: 8px;
+  background: #ededed;
+  font-size: 11px;
+  margin-bottom: 15px;
+}
+.mobile-app .batchbar .btn {
+  min-height: 33px;
+  font-size: 10px;
+  padding: 5px 8px;
+}
+.mobile-app input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  accent-color: #222;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.mobile-records {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.mobile-order-card {
+  border: 1px solid #e2e2e2;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  padding: 15px 16px 0;
+  cursor: pointer;
+}
+.mobile-order-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+.mobile-order-heading > input {
+  margin: 0;
+}
+.mobile-order-heading .platform-tag {
+  font-size: 10px;
+}
+.mobile-order-heading .badge {
+  font-size: 9px;
+  padding: 3px 7px;
+}
+.mobile-order-main {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.mobile-order-thumb {
+  width: 57px;
+  height: 64px;
+  flex-shrink: 0;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f3f3f3;
+}
+.mobile-order-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mobile-order-thumb.placeholder {
+  display: grid;
+  place-items: center;
+  color: #bbb;
+}
+.mobile-order-thumb .icon {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.3;
+}
+.mobile-order-main > div:last-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-order-main h3 {
+  font-size: 14px;
+  line-height: 1.7;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-order-main p {
+  font-size: 11px;
+  color: #949494;
+  margin: 3px 0;
+}
+.mobile-order-main p > span {
+  margin: 0 7px;
+  color: #bbb;
+}
+.mobile-order-main small {
+  font-size: 10px;
+  color: #aaa;
+}
+.mobile-order-main > .icon {
+  width: 14px;
+  height: 14px;
+  color: #aaa;
+}
+.mobile-order-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #eee;
+  min-height: 62px;
+  gap: 12px;
+  padding: 10px 0;
+}
+.mobile-order-foot > strong {
+  font-size: 20px;
+  font-weight: 550;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-order-foot > strong small {
+  font-size: 9px;
+  font-weight: 400;
+  color: #aaa;
+  letter-spacing: 0;
+  margin-left: 9px;
+}
+.mobile-app .mobile-order-foot .btn {
+  min-height: 34px;
+  font-size: 10px;
+  padding: 5px 10px;
+  border-color: #e6e6e6;
+  color: #777;
+}
+.mobile-list-note {
+  text-align: center;
+  font-size: 10px;
+  color: #aaa;
+  padding: 19px 0 0;
+}
+.mobile-app .entity-card {
+  border-radius: 12px;
+  border-color: #e2e2e2;
+}
+.mobile-client-card {
+  padding: 19px 17px 0;
+}
+.mobile-client-card .color-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+.mobile-client-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.mobile-client-heading .avatar {
+  height: 38px;
+  width: 38px;
+  border-radius: 9px;
+  background: #efefef;
+  font-size: 14px;
+}
+.mobile-client-heading h3 {
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 550;
+}
+.mobile-client-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+}
+.mobile-client-platforms .platform-tag {
+  font-size: 9px;
+}
+.mobile-client-heading input {
+  margin: 0;
+}
+.mobile-client-pref {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #969696;
+  margin: 17px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 20px;
+}
+.mobile-client-foot {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-top: 1px solid #eee;
+  padding: 13px 0 15px;
+}
+.mobile-client-foot > span {
+  font-size: 9px;
+  color: #aaa;
+  line-height: 1.7;
+}
+.mobile-client-foot strong {
+  display: block;
+  font-size: 16px;
+  color: #333;
+  font-weight: 550;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
+}
+.mobile-client-foot strong small {
+  font-size: 9px;
+  font-weight: 400;
+  color: #aaa;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+.mobile-client-foot > .mobile-client-progress {
+  margin-left: auto;
+  font-size: 9px;
+  align-self: end;
+  color: #888;
+  padding-bottom: 3px;
+}
+.mobile-client-progress .icon {
+  width: 11px;
+  height: 11px;
+}
+.mobile-template-card {
+  padding: 18px 16px 0;
+}
+.mobile-template-card .color-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+}
+.mobile-template-card .entity-check {
+  position: absolute;
+  right: 15px;
+  top: 16px;
+}
+.mobile-template-main {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-right: 17px;
+  margin-bottom: 18px;
+}
+.mobile-template-image {
+  width: 65px;
+  height: 78px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f2f2f2;
+  border: 1px solid #eee;
+}
+.mobile-template-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mobile-template-main > div:last-child {
+  flex: 1;
+}
+.mobile-template-main .platform-tag {
+  font-size: 10px;
+}
+.mobile-template-main h3 {
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 4px 0;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-template-main p {
+  font-size: 9px;
+  color: #aaa;
+}
+.mobile-template-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 14px;
+  border-top: 1px solid #eee;
+  gap: 10px;
+}
+.mobile-template-bottom > strong {
+  font-size: 22px;
+  font-weight: 550;
+  letter-spacing: -0.7px;
+}
+.mobile-template-bottom strong small {
+  display: block;
+  font-size: 9px;
+  font-weight: 400;
+  color: #aaa;
+  letter-spacing: 0;
+  margin-top: 2px;
+}
+.mobile-app .mobile-template-bottom .btn {
+  min-height: 37px;
+  font-size: 10px;
+  padding: 7px 10px;
+}
+.mobile-month-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 17px 15px;
+}
+.mobile-month-head h2 {
+  font-size: 18px;
+  font-weight: 550;
+  letter-spacing: -0.4px;
+}
+.mobile-month-head .row {
+  gap: 4px;
+}
+.mobile-app .mobile-month-head .icon-btn {
+  height: 32px;
+  width: 28px;
+  border: 0;
+  background: #fafafa;
+}
+.mobile-app .mobile-month-head .btn {
+  min-height: 32px;
+  font-size: 10px;
+  padding: 5px 7px;
+  border: 0;
+  background: none;
+  color: #888;
+}
+.mobile-calendar-filter {
+  padding: 0 17px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+.mobile-app .mobile-calendar-filter .filter {
+  font-size: 10px;
+  padding: 5px 9px;
+  min-height: 30px;
+  flex: none;
+  width: 114px;
+  background: #fafafa;
+  border-color: #ededed;
+  border-radius: 6px;
+}
+.mobile-calendar-filter > span {
+  font-size: 10px;
+  color: #aaa;
+}
+.mobile-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0;
+  padding: 0 11px 14px;
+}
+.mobile-month-weekday {
+  font-size: 10px;
+  color: #aaa;
+  text-align: center;
+  padding: 8px 0 11px;
+  border-top: 1px solid #eee;
+}
+.mobile-month-day {
+  height: 49px;
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+}
+.mobile-month-day > span:first-child {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #555;
+}
+.mobile-month-day.outside > span:first-child {
+  color: #c3c3c3;
+}
+.mobile-month-day.is-today > span:first-child {
+  border-color: #bfbfbf;
+}
+.mobile-month-day.selected > span:first-child {
+  background: #222;
+  border-color: #222;
+  color: #fff;
+  font-weight: 500;
+}
+.month-dots {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  height: 4px;
+}
+.month-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+}
+.mobile-month-agenda {
+  padding: 0 17px 6px;
+}
+.mobile-app .income-section {
+  margin-top: 25px;
+}
+.mobile-app .income-title {
+  align-items: center;
+  margin-bottom: 15px;
+}
+.mobile-app .income-title h2 {
+  font-size: 17px;
+}
+.mobile-app .income-title > span {
+  font-size: 10px;
+  color: #aaa;
+}
+.mobile-income-total {
+  padding: 19px 20px 18px;
+  border: 1px solid #e4e4e4;
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mobile-income-total > span {
+  font-size: 11px;
+  color: #999;
+}
+.mobile-income-total > strong {
+  font-size: 36px;
+  font-weight: 550;
+  letter-spacing: -1.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.mobile-income-total > small {
+  font-size: 10px;
+  color: #aaa;
+}
+.mobile-app .mobile-accounting-note {
+  font-size: 9px;
+  margin: 11px 1px 17px;
+  line-height: 1.8;
+}
+.mobile-app .income-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.mobile-app .stat-card {
+  padding: 20px 18px;
+  border-radius: 12px;
+  border-color: #e4e4e4;
+}
+.mobile-app .stat-card h3 {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.mobile-app .donut-layout {
+  margin-top: 18px;
+  gap: 26px;
+}
+.mobile-app .donut {
+  width: 104px;
+  height: 104px;
+}
+.mobile-app .chart-legend {
+  gap: 11px;
+  font-size: 10px;
+}
+.mobile-app .bar-row {
+  font-size: 11px;
+  grid-template-columns: 68px 1fr 55px;
+  margin: 16px 0;
+  gap: 10px;
+}
+.mobile-app .bar-track {
+  height: 5px;
+}
+.mobile-app .stat-card .empty {
+  padding: 23px 0 !important;
+  font-size: 11px;
+}
+.mobile-app .tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.mobile-app .tool-card {
+  min-height: 201px;
+  padding: 18px 15px;
+  border-radius: 12px;
+  border-color: #e2e2e2;
+  transition: background 0.15s;
+}
+.mobile-app .tool-icon {
+  height: 37px;
+  width: 37px;
+  border-radius: 9px;
+  background: #f1f1f1;
+  margin-bottom: 15px;
+}
+.mobile-app .tool-icon .icon {
+  width: 19px;
+  height: 19px;
+}
+.mobile-app .tool-card h3 {
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: -0.3px;
+}
+.mobile-app .tool-card h3 .icon {
+  display: none;
+}
+.mobile-app .tool-card p {
+  font-size: 10px;
+  line-height: 1.9;
+  max-width: none;
+  margin-top: 8px;
+  color: #999;
+}
+.mobile-app .tool-index {
+  font-size: 9px;
+  right: 16px;
+  top: 20px;
+  color: #bdbdbd;
+}
+.mobile-app .assets-panel {
+  padding: 20px 17px;
+  margin-top: 20px;
+}
+.mobile-app .assets-panel h3 {
+  font-size: 14px;
+}
+.mobile-app .assets-panel .row.between {
+  align-items: start;
+  gap: 12px;
+}
+.mobile-app .assets-panel .settings-note {
+  font-size: 10px;
+  line-height: 1.9;
+  max-width: 205px;
+}
+.mobile-app .assets-panel .btn {
+  min-height: 34px;
+  font-size: 10px;
+  padding: 5px 9px;
+}
+.mobile-app .asset-grid {
+  gap: 9px;
+  margin-top: 17px;
+}
+.mobile-app .asset-item,
+.mobile-app .asset-add {
+  width: 66px;
+  height: 66px;
+  border-radius: 7px;
+}
+.mobile-app .asset-add {
+  font-size: 9px;
+}
+.mobile-app .asset-item button {
+  height: 24px;
+  width: 24px;
+}
+.mobile-app .mobile-tool-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  background: #eaeaea;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  gap: 4px;
+  margin: 0 0 18px;
+  position: sticky;
+  top: 80px;
+  z-index: 20;
+}
+.mobile-tool-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #929292;
+}
+.mobile-tool-tabs button .icon {
+  height: 14px;
+  width: 14px;
+}
+.mobile-tool-tabs button.active {
+  background: #fff;
+  color: #222;
+  box-shadow: 0 1px 4px #00000005;
+}
+.mobile-app .tool-workspace {
+  display: block;
+}
+.mobile-app .tool-workspace[data-mobile-pane='edit'] > .preview-panel {
+  display: none;
+}
+.mobile-app .tool-workspace[data-mobile-pane='preview'] > .tool-settings {
+  display: none;
+}
+.mobile-app .tool-settings {
+  padding: 21px 18px;
+}
+.mobile-app .tool-settings > h3 {
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.mobile-app .tool-settings .field {
+  margin-bottom: 18px;
+}
+.mobile-app .tool-saved-list {
+  gap: 7px;
+  margin-bottom: 17px;
+}
+.mobile-app .tool-saved-list button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 10px;
+  border-radius: 6px;
+}
+.mobile-app .tool-saved-list:empty {
+  display: none;
+}
+.mobile-app .tool-settings .row {
+  flex-wrap: wrap;
+}
+.mobile-app .dropzone {
+  padding: 26px 13px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.9;
+}
+.mobile-app .dropzone .icon {
+  width: 23px;
+  height: 23px;
+  margin-bottom: 9px;
+}
+.mobile-app .watermark-grid {
+  grid-template-columns: 1fr 21px 1fr;
+  gap: 7px;
+}
+.mobile-app .watermark-grid .dropzone {
+  padding: 25px 9px;
+}
+.mobile-app .merge-plus {
+  font-size: 19px;
+}
+.mobile-app .preview-panel {
+  padding: 21px 13px;
+  min-height: 0;
+  background: #ececec;
+  border-radius: 12px;
+}
+.mobile-app .preview-panel canvas {
+  max-width: 100%;
+  max-height: 455px;
+  display: block;
+  box-shadow: 0 2px 15px #00000006;
+  touch-action: none;
+}
+.mobile-app .preview-panel > .eyebrow {
+  font-size: 10px !important;
+  color: #999;
+  margin-bottom: 20px !important;
+}
+.mobile-app .canvas-actions {
+  gap: 7px;
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.mobile-app .canvas-actions .btn {
+  font-size: 11px;
+  min-height: 39px;
+  padding: 8px 11px;
+  background: #fff;
+}
+.mobile-app .canvas-actions .btn.primary {
+  background: #222;
+}
+.mobile-app .layout-assets button {
+  height: 49px;
+  width: 49px;
+  border-radius: 6px;
+}
+.mobile-app .hint,
+.mobile-app .settings-note {
+  font-size: 10px;
+  line-height: 1.9;
+  color: #999;
+}
+.mobile-app .field-range input {
+  min-height: 35px;
+}
+.mobile-app .field-range span {
+  font-size: 11px;
+  min-width: 37px;
+}
+.mobile-app .field {
+  margin-bottom: 16px;
+}
+.mobile-app .field > span,
+.mobile-app .field > label {
+  font-size: 12px;
+  color: #777;
+  margin-bottom: 8px;
+}
+.mobile-app .field input:not([type='checkbox']):not([type='range']):not([type='color']),
+.mobile-app .field select,
+.mobile-app .field textarea {
+  font-size: 16px;
+  line-height: 1.55;
+  min-height: 46px;
+  border: 1px solid #dfdfdf;
+  border-radius: 7px;
+  padding: 11px 12px;
+  background: #fff;
+  color: #333;
+  appearance: auto;
+  max-width: 100%;
+}
+.mobile-app .field textarea {
+  min-height: 95px;
+  resize: vertical;
+  line-height: 1.8;
+}
+.mobile-app .field input[type='color'] {
+  height: 45px;
+  border-radius: 7px;
+  border-color: #dfdfdf;
+}
+.mobile-app .field-inline {
+  gap: 8px;
+}
+.mobile-app .field-inline select {
+  min-width: 0;
+}
+.mobile-app .field-inline .icon-btn {
+  height: 46px;
+  width: 41px;
+  flex-shrink: 0;
+}
+.mobile-app .form-grid {
+  grid-template-columns: 1fr;
+  gap: 17px;
+}
+.mobile-app .form-grid .field.full {
+  grid-column: auto;
+}
+.mobile-app .form-grid .field {
+  margin: 0;
+}
+.mobile-app .tool-settings .form-grid {
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.mobile-app .tool-settings .form-grid .field input {
+  font-size: 15px;
+}
+.mobile-app .check-row {
+  font-size: 12px;
+  gap: 9px;
+  min-height: 28px;
+}
+.mobile-app .check-options {
+  gap: 12px 19px;
+  padding: 11px 0 16px;
+}
+.mobile-app .section-label {
+  font-size: 13px;
+  gap: 9px;
+  line-height: 1.7;
+  margin-bottom: 19px;
+  font-weight: 550;
+}
+.mobile-app .section-label .number {
+  font-size: 10px;
+  padding-right: 9px;
+}
+.mobile-app .modal-section {
+  margin-bottom: 29px;
+}
+.mobile-app .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  padding: 0;
+  align-items: flex-end;
+  justify-content: center;
+  background: #00000070;
+  backdrop-filter: blur(2px);
+  z-index: 90;
+}
+.mobile-app .modal,
+.mobile-app .modal.narrow,
+.mobile-app .modal.wide {
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100dvh - 26px);
+  border: 0;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -10px 60px #00000018;
+  display: flex;
+  flex-direction: column;
+  padding-top: 0;
+}
+.mobile-app .modal:before {
+  content: '';
+  height: 4px;
+  width: 31px;
+  border-radius: 3px;
+  background: #d7d7d7;
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.mobile-app .modal {
+  position: relative;
+}
+.mobile-app .modal-head {
+  padding: 24px 20px 16px;
+  gap: 12px;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  min-height: 74px;
+}
+.mobile-app .modal-head h2 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.mobile-app .modal-head .icon-btn {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: #f3f3f3;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mobile-app .modal-head .icon-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+.mobile-app .modal-body {
+  padding: 23px 20px 25px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-app .modal-foot {
+  padding: 13px 20px max(18px, env(safe-area-inset-bottom));
+  gap: 9px;
+  background: #fff;
+  border-top: 1px solid #e6e6e6;
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.mobile-app .modal-foot .btn {
+  min-height: 43px;
+  font-size: 12px;
+  flex: 1;
+  padding: 9px 11px;
+  border-radius: 8px;
+}
+.mobile-app .modal-foot .btn.left {
+  margin-right: 0;
+  flex: none;
+}
+.mobile-app .modal-foot .btn.primary {
+  flex: 1.4;
+}
+.mobile-app #order-form .modal-section:nth-child(2) > .form-grid {
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 12px;
+}
+.mobile-app
+  #order-form
+  .modal-section:nth-child(2)
+  > .form-grid
+  > .field:last-child:has(.check-row) {
+  grid-column: 1/-1;
+}
+.mobile-app .service-row {
+  grid-template-columns: 1fr 84px 31px;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.mobile-app .service-row input {
+  min-height: 43px;
+  font-size: 14px;
+  border-radius: 6px;
+  padding: 9px;
+}
+.mobile-app .service-row .icon-btn {
+  width: 31px;
+  height: 43px;
+  border: 0;
+}
+.mobile-app .money-preview {
+  padding: 15px 12px;
+  border-radius: 7px;
+  gap: 10px;
+  align-items: start;
+  line-height: 1.9;
+  font-size: 10px;
+}
+.mobile-app .money-preview strong {
+  font-size: 22px;
+  white-space: nowrap;
+  line-height: 1.7;
+}
+.mobile-app .upload-previews {
+  gap: 9px;
+  margin-top: 13px;
+}
+.mobile-app .upload-preview {
+  height: 72px;
+  width: 72px;
+  border-radius: 6px;
+}
+.mobile-app .upload-preview button {
+  width: 23px;
+  height: 23px;
+}
+.mobile-app .detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.mobile-app .detail-art > img {
+  max-height: 280px;
+  border-radius: 8px;
+  width: 100%;
+  object-fit: contain;
+}
+.mobile-app .detail-kv {
+  grid-template-columns: 72px 1fr;
+  gap: 14px 12px;
+  font-size: 12px;
+  line-height: 1.9;
+}
+.mobile-app .detail-kv dt {
+  font-size: 11px;
+}
+.mobile-app .detail-kv dd {
+  color: #555;
+}
+.mobile-app .detail-kv dd .badge {
+  font-size: 10px;
+}
+.mobile-app .detail-link {
+  padding: 14px 12px;
+  min-height: 65px;
+  font-size: 12px;
+  border-radius: 7px;
+  line-height: 1.8;
+}
+.mobile-app .detail-link small {
+  font-size: 10px;
+}
+.mobile-app .detail-link .badge {
+  font-size: 10px;
+}
+.mobile-app .detail-link-list {
+  gap: 10px;
+}
+.mobile-app .inline-client {
+  font-size: 12px;
+}
+.mobile-app .platform-manager-row {
+  gap: 8px;
+  padding: 14px 0;
+}
+.mobile-app .platform-manager-row .platform-name {
+  font-size: 14px;
+  min-height: 42px;
+  padding: 8px;
+  min-width: 0;
+}
+.mobile-app .platform-manager-row input[type='number'] {
+  width: 58px;
+  font-size: 14px;
+  min-height: 42px;
+}
+.mobile-app .platform-manager-row input[type='color'] {
+  width: 30px;
+  height: 36px;
+  flex-shrink: 0;
+}
+.mobile-app .platform-manager-row .icon-btn {
+  width: 28px;
+  flex-shrink: 0;
+  border: 0;
+}
+.mobile-app .platform-manager-row > .small {
+  font-size: 10px;
+}
+.mobile-app .settings-actions {
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+.mobile-app .settings-actions .btn {
+  font-size: 11px;
+  min-height: 43px;
+  padding: 8px;
+}
+.mobile-app .notice {
+  font-size: 11px;
+  line-height: 1.9;
+}
+.mobile-app .lightbox img {
+  max-height: 70dvh;
+}
+.mobile-app #toast {
+  left: 50%;
+  bottom: calc(89px + env(safe-area-inset-bottom));
+  width: max-content;
+  max-width: min(390px, calc(100vw - 34px));
+  padding: 12px 17px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.7;
+  box-shadow: 0 3px 20px #00000012;
+}
+.mobile-app .small {
+  font-size: 11px;
+}
+.mobile-app .divider {
+  margin: 23px 0;
+}
+.mobile-app .empty {
+  font-size: 12px;
+  line-height: 1.9;
+}
+.mobile-app .mobile-content > div.row:first-child .btn {
+  font-size: 11px;
+  min-height: 35px;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  color: #888;
+}
+.mobile-app .mobile-content > div.row:first-child:has([data-action='tools-back']) {
+  margin-bottom: 14px !important;
+}
+@media (max-width: 374px) {
+  .mobile-app .content {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .mobile-app .topbar {
+    padding-left: 14px;
+    padding-right: 12px;
+  }
+  .mobile-save {
+    display: none;
+  }
+  .mobile-app .page-intro p {
+    font-size: 10px;
+  }
+  .mobile-app .panel-header {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .mobile-app .mobile-subdate {
+    font-size: 8px;
+  }
+  .mobile-app .week-toolbar .icon-btn {
+    width: 24px;
+  }
+  .mobile-app .week-toolbar > .btn {
+    font-size: 9px;
+    padding: 4px;
+  }
+  .mobile-app .mobile-order-foot strong small {
+    display: block;
+    margin: 2px 0 0;
+  }
+  .mobile-app .settings-actions {
+    grid-template-columns: 1fr;
+  }
+  .mobile-app .modal-body {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .mobile-app .modal-foot {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .mobile-client-foot {
+    gap: 17px;
+  }
+  .mobile-app .tool-card {
+    padding: 17px 13px;
+  }
+  .mobile-app .tool-card h3 {
+    font-size: 13px;
+  }
+}
+@media (min-width: 600px) {
+  body.mobile-app {
+    min-height: 100vh;
+  }
+  .mobile-app .modal-backdrop {
+    background: #00000060;
+  }
+  .mobile-app .modal {
+    max-height: calc(100dvh - 36px);
+  }
+}
+.mobile-app .current-panel .mobile-empty {
+  padding-top: 25px;
+  padding-bottom: 26px;
+}
+.mobile-app .current-panel .mobile-empty p {
+  margin-bottom: 0;
+}
+.mobile-app .summary-symbol {
+  transform: none;
+}
+.mobile-app input:not([type='checkbox']):not([type='range']):not([type='file']),
+.mobile-app select,
+.mobile-app textarea {
+  font-size: 16px !important;
+}
+.mobile-app .toolbar > .filter {
+  flex: 1 1 calc(50% - 5px);
+  font-size: 16px;
+}
+.mobile-app .mobile-calendar-filter .filter {
+  width: 145px;
+  min-height: 36px;
+}
