@@ -1,0 +1,14 @@
+{
+  "name": "lotus-workbench",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "个人接稿工作台，管理稿件、单主、排期、模板与交付素材。",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/serve.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
